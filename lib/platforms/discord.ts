@@ -1,5 +1,5 @@
 import type { PlatformAdapter, CheckResult } from "./types";
-import { BROWSER_UA, fetchWithTimeout, isAbortError } from "./http";
+import { BROWSER_UA, fetchWithRetry, isAbortError } from "./http";
 
 // Discord unique usernames: 2–32 chars, lowercase letters, numbers, underscore, period.
 const DISCORD_RE = /^[a-z0-9._]{2,32}$/;
@@ -13,14 +13,17 @@ export const discordAdapter: PlatformAdapter = {
     if (!DISCORD_RE.test(handle) || !/[a-z0-9]/.test(handle)) {
       return {
         status: "invalid",
+        reason: "invalid_format",
+        confidence: "high",
         meta: {
-          note: "Discord usernames are 2–32 chars: lowercase letters, numbers, . or _",
+          method: "validation",
+          devNote: "Discord usernames are 2–32 chars: lowercase letters, numbers, . or _",
         },
       };
     }
 
     try {
-      const res = await fetchWithTimeout(
+      const res = await fetchWithRetry(
         "https://discord.com/api/v9/unique-username/username-attempt-unauthed",
         {
           method: "POST",
@@ -36,9 +39,11 @@ export const discordAdapter: PlatformAdapter = {
       if (res.status === 429) {
         return {
           status: "unknown",
+          reason: "rate_limited",
+          confidence: "low",
           meta: {
             method: "username_attempt_unauthed",
-            note: "Discord rate-limited this check",
+            devNote: "Discord rate-limited this check",
           },
         };
       }
@@ -67,12 +72,16 @@ export const discordAdapter: PlatformAdapter = {
       if (data.taken) {
         return {
           status: "taken",
+          confidence: "high",
+          reason: "ok",
           meta: { method: "username_attempt_unauthed" },
         };
       }
 
       return {
         status: "available",
+        confidence: "high",
+        reason: "ok",
         meta: { method: "username_attempt_unauthed" },
       };
     } catch (err) {

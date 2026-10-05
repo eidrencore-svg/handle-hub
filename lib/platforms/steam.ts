@@ -1,5 +1,5 @@
 import type { PlatformAdapter, CheckResult } from "./types";
-import { fetchWithTimeout, isAbortError } from "./http";
+import { fetchWithRetry, isAbortError, looksLikeChallenge } from "./http";
 
 const VANITY_RE = /^[a-zA-Z0-9_-]{2,32}$/;
 
@@ -14,13 +14,15 @@ async function checkViaWebApi(
   url.searchParams.set("vanityurl", username);
   url.searchParams.set("url_type", "1");
 
-  const res = await fetchWithTimeout(url.toString());
+  const res = await fetchWithRetry(url.toString());
   if (!res.ok) {
     return {
       status: "unknown",
+      reason: res.status === 429 ? "rate_limited" : "unexpected_response",
+      confidence: "low",
       meta: {
-        note: `Steam Web API HTTP ${res.status}`,
         method: "ResolveVanityURL",
+        devNote: `Steam Web API HTTP ${res.status}`,
       },
     };
   }
@@ -30,10 +32,11 @@ async function checkViaWebApi(
   };
   const success = data.response?.success;
 
-  // Steam: success=1 → vanity resolves (taken); success=42 → not found (available)
   if (success === 1 && data.response?.steamid) {
     return {
       status: "taken",
+      confidence: "high",
+      reason: "ok",
       profileUrl: `https://steamcommunity.com/id/${encodeURIComponent(username)}`,
       meta: {
         method: "ResolveVanityURL",
@@ -44,55 +47,73 @@ async function checkViaWebApi(
   if (success === 42) {
     return {
       status: "available",
+      confidence: "high",
+      reason: "ok",
       meta: { method: "ResolveVanityURL" },
     };
   }
 
   return {
     status: "unknown",
+    reason: "unexpected_response",
+    confidence: "low",
     meta: {
       method: "ResolveVanityURL",
-      note: data.response?.message ?? `Unexpected success=${success}`,
+      devNote: data.response?.message ?? `Unexpected success=${success}`,
     },
   };
 }
 
 async function checkViaCommunityXml(username: string): Promise<CheckResult> {
-  const res = await fetchWithTimeout(
+  const res = await fetchWithRetry(
     `https://steamcommunity.com/id/${encodeURIComponent(username)}/?xml=1`,
-    {
-      headers: {
-        Accept: "application/xml,text/xml,*/*",
-      },
-    }
+    { headers: { Accept: "application/xml,text/xml,*/*" } }
   );
 
   const body = await res.text();
-  if (/<steamID64>\d+<\/steamID64>/i.test(body)) {
+  if (looksLikeChallenge(body, res.status)) {
     return {
-      status: "taken",
-      profileUrl: `https://steamcommunity.com/id/${encodeURIComponent(username)}`,
-      meta: { method: "community_xml" },
+      status: "unknown",
+      reason: "platform_blocked",
+      confidence: "low",
+      meta: { method: "community_xml", devNote: "Challenge detected" },
     };
   }
+
+  const idMatch = body.match(/<steamID64>(\d+)<\/steamID64>/i);
+  if (idMatch) {
+    return {
+      status: "taken",
+      confidence: "medium",
+      reason: "best_effort",
+      profileUrl: `https://steamcommunity.com/id/${encodeURIComponent(username)}`,
+      meta: { method: "community_xml", steamId: idMatch[1] },
+    };
+  }
+
   if (
     /could not be found/i.test(body) ||
-    /<error>/i.test(body)
+    (/<error>/i.test(body) && /not be found|no profile/i.test(body))
   ) {
     return {
       status: "available",
+      confidence: "medium",
+      reason: "best_effort",
       meta: {
         method: "community_xml",
-        note: "No profile for this vanity URL (persona names are separate).",
+        devNote:
+          "No profile for this vanity URL (persona names are separate).",
       },
     };
   }
 
   return {
     status: "unknown",
+    reason: "unexpected_response",
+    confidence: "low",
     meta: {
       method: "community_xml",
-      note: `Unexpected response (HTTP ${res.status})`,
+      devNote: `Unexpected response (HTTP ${res.status})`,
     },
   };
 }
@@ -105,23 +126,27 @@ export const steamAdapter: PlatformAdapter = {
     if (!VANITY_RE.test(username)) {
       return {
         status: "invalid",
+        reason: "invalid_format",
+        confidence: "high",
         meta: {
-          note: "Steam vanity URLs are 2–32 chars: letters, numbers, _ or -",
+          method: "validation",
+          devNote: "Steam vanity URLs are 2–32 chars: letters, numbers, _ or -",
         },
       };
     }
 
     try {
       const apiKey = process.env.STEAM_API_KEY?.trim();
-      if (apiKey) {
-        return await checkViaWebApi(username, apiKey);
-      }
+      if (apiKey) return await checkViaWebApi(username, apiKey);
       return await checkViaCommunityXml(username);
     } catch (err) {
       return {
         status: "unknown",
+        reason: isAbortError(err) ? "timeout" : "network_error",
+        confidence: "low",
         meta: {
-          note: isAbortError(err)
+          method: "community_xml",
+          devNote: isAbortError(err)
             ? "Steam check timed out"
             : err instanceof Error
               ? err.message

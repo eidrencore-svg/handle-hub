@@ -1,5 +1,5 @@
 import type { PlatformAdapter, CheckResult } from "./types";
-import { fetchWithTimeout, isAbortError } from "./http";
+import { fetchWithRetry, isAbortError } from "./http";
 
 // PSN online IDs: 3–16 chars, start with a letter, letters/numbers/-/_
 const PSN_RE = /^[a-zA-Z][a-zA-Z0-9_-]{2,15}$/;
@@ -12,14 +12,17 @@ export const playstationAdapter: PlatformAdapter = {
     if (!PSN_RE.test(username)) {
       return {
         status: "invalid",
+        reason: "invalid_format",
+        confidence: "high",
         meta: {
-          note: "PSN online IDs are 3–16 chars, start with a letter, then letters/numbers/-/_",
+          method: "validation",
+          devNote: "PSN online IDs are 3–16 chars, start with a letter, then letters/numbers/-/_",
         },
       };
     }
 
     try {
-      const res = await fetchWithTimeout(
+      const res = await fetchWithRetry(
         "https://accounts.api.playstation.com/api/v1/accounts/onlineIds",
         {
           method: "POST",
@@ -45,6 +48,8 @@ export const playstationAdapter: PlatformAdapter = {
       if (res.status === 201 || res.status === 200) {
         return {
           status: "available",
+          confidence: "high",
+          reason: "ok",
           meta: { method: "psn_onlineIds", httpStatus: res.status },
         };
       }
@@ -60,6 +65,8 @@ export const playstationAdapter: PlatformAdapter = {
         if (/already exists/i.test(messages)) {
           return {
             status: "taken",
+            confidence: "high",
+            reason: "ok",
             profileUrl: `https://psnprofiles.com/${encodeURIComponent(username)}`,
             meta: { method: "psn_onlineIds", httpStatus: 400 },
           };
