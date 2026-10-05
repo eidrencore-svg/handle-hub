@@ -1,9 +1,8 @@
 import type { PlatformAdapter, CheckResult } from "./types";
 import { BROWSER_UA, fetchWithRetry, fetchWithTimeout, isAbortError } from "./http";
+import { buildProfile, sanitizeBio } from "./profile";
 
 const TWITCH_RE = /^[a-zA-Z0-9_]{4,25}$/;
-
-/** Public web Client-Id used by twitch.tv (best-effort GQL fallback only). */
 const TWITCH_WEB_CLIENT_ID = "kimne78kx3ncx6brgo4mv6wki5h1ko";
 
 let cachedAppToken: { token: string; expiresAt: number } | null = null;
@@ -36,6 +35,15 @@ async function getHelixAppToken(
   };
   return data.access_token;
 }
+
+type HelixUser = {
+  id?: string;
+  login?: string;
+  display_name?: string;
+  description?: string;
+  profile_image_url?: string;
+  broadcaster_type?: string;
+};
 
 async function checkViaHelix(
   login: string,
@@ -80,9 +88,7 @@ async function checkViaHelix(
     };
   }
 
-  const data = (await res.json()) as {
-    data?: Array<{ id?: string; login?: string }>;
-  };
+  const data = (await res.json()) as { data?: HelixUser[] };
   const user = data.data?.[0];
   if (user?.id) {
     return {
@@ -90,6 +96,15 @@ async function checkViaHelix(
       profileUrl: `https://www.twitch.tv/${encodeURIComponent(login)}`,
       confidence: "high",
       reason: "ok",
+      profile: buildProfile({
+        displayName: user.display_name || user.login,
+        avatarUrl: user.profile_image_url,
+        bio: sanitizeBio(user.description),
+        verified: user.broadcaster_type === "partner",
+        extra: user.broadcaster_type
+          ? { broadcasterType: user.broadcaster_type }
+          : undefined,
+      }),
       meta: { method: "helix_users", userId: user.id },
     };
   }
@@ -115,7 +130,7 @@ async function checkViaGql(login: string): Promise<CheckResult> {
     },
     body: JSON.stringify({
       query:
-        "query($login:String!){user(login:$login){id login displayName}}",
+        "query($login:String!){user(login:$login){id login displayName description profileImageURL(width:300) followers{totalCount} roles{isPartner isAffiliate}}}",
       variables: { login },
     }),
   });
@@ -128,7 +143,17 @@ async function checkViaGql(login: string): Promise<CheckResult> {
   }
 
   const data = (await res.json()) as {
-    data?: { user?: { id?: string; login?: string } | null };
+    data?: {
+      user?: {
+        id?: string;
+        login?: string;
+        displayName?: string;
+        description?: string;
+        profileImageURL?: string;
+        followers?: { totalCount?: number } | null;
+        roles?: { isPartner?: boolean; isAffiliate?: boolean } | null;
+      } | null;
+    };
     errors?: unknown[];
   };
 
@@ -142,15 +167,24 @@ async function checkViaGql(login: string): Promise<CheckResult> {
     };
   }
 
-  if (data.data?.user?.id) {
+  const user = data.data?.user;
+  if (user?.id) {
     return {
       status: "taken",
       profileUrl: `https://www.twitch.tv/${encodeURIComponent(login)}`,
       confidence: "medium",
       reason: "best_effort",
+      profile: buildProfile({
+        displayName: user.displayName || user.login,
+        avatarUrl: user.profileImageURL,
+        bio: sanitizeBio(user.description),
+        followers: user.followers?.totalCount,
+        verified: Boolean(user.roles?.isPartner),
+        extra: user.roles?.isAffiliate ? { affiliate: true } : undefined,
+      }),
       meta: {
         method: "twitch_gql",
-        userId: data.data.user.id,
+        userId: user.id,
         devNote: "Public GQL probe; prefer TWITCH_CLIENT_ID + TWITCH_CLIENT_SECRET.",
       },
     };
