@@ -23,7 +23,34 @@ export default function HomeClient() {
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<FilterKey>("all");
   const [copied, setCopied] = useState<"user" | "link" | null>(null);
+  const [recentSearches, setRecentSearches] = useState<
+    Array<{ username: string; createdAt: string }>
+  >([]);
   const autoRan = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/recent");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled && Array.isArray(data.searches)) {
+          setRecentSearches(
+            data.searches.map((s: { username: string; createdAt: string }) => ({
+              username: s.username,
+              createdAt: s.createdAt,
+            }))
+          );
+        }
+      } catch {
+        /* optional strip */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [results]);
 
   const summary = useMemo(() => {
     const counts = { available: 0, taken: 0, unknown: 0, invalid: 0 };
@@ -194,6 +221,25 @@ export default function HomeClient() {
           <p className="mt-3 text-xs text-slate-500">
             Press Enter to search. Shareable links use ?username=
           </p>
+          {recentSearches.length > 0 ? (
+            <div className="mx-auto mt-6 max-w-2xl">
+              <p className="mb-2 text-left text-xs font-medium uppercase tracking-wider text-slate-500">
+                Recently checked
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {recentSearches.map((s) => (
+                  <button
+                    key={`${s.username}-${s.createdAt}`}
+                    type="button"
+                    onClick={() => void runCheck(s.username, true)}
+                    className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-slate-300 transition hover:border-accent/40 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  >
+                    @{s.username}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </section>
 
         <div aria-live="polite" aria-atomic="true" className="sr-only">
