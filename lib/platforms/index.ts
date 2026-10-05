@@ -1,4 +1,5 @@
 import type { PlatformAdapter } from "./types";
+import { presentResult } from "./messages";
 import { steamAdapter } from "./steam";
 import { xboxAdapter } from "./xbox";
 import { playstationAdapter } from "./playstation";
@@ -10,7 +11,14 @@ import { twitchAdapter } from "./twitch";
 import { redditAdapter } from "./reddit";
 import { youtubeAdapter } from "./youtube";
 
-export type { PlatformAdapter, PlatformKind, UsernameStatus, CheckResult } from "./types";
+export type {
+  PlatformAdapter,
+  PlatformKind,
+  UsernameStatus,
+  CheckResult,
+} from "./types";
+export type { CheckReason, PresentedResult } from "./messages";
+export { userMessageFor, isEstimate, presentResult } from "./messages";
 
 export const adapters: PlatformAdapter[] = [
   steamAdapter,
@@ -28,7 +36,8 @@ export const adapters: PlatformAdapter[] = [
 export async function checkAllPlatforms(username: string) {
   const results = await Promise.all(
     adapters.map(async (adapter) => {
-      const result = await adapter.checkUsername(username);
+      const raw = await adapter.checkUsername(username);
+      const result = presentResult(raw);
       return {
         platformId: adapter.id,
         platformName: adapter.name,
