@@ -60,6 +60,7 @@ export async function GET(request: NextRequest) {
         meta: {
           ...(r.meta ?? {}),
           confidence: r.confidence,
+          ...(r.profile ? { profile: r.profile } : {}),
         },
       }))
     );
@@ -68,10 +69,14 @@ export async function GET(request: NextRequest) {
   const byId = new Map<string, (typeof fresh)[number] | Record<string, unknown>>();
 
   for (const [pid, row] of cached) {
+    const cachedProfile = row.meta?.profile as
+      | import("@/lib/platforms/profile").ProfileInfo
+      | undefined;
     const presented = presentResult({
       status: row.status as "available" | "taken" | "unknown" | "invalid",
       reason: (row.reason as undefined) ?? undefined,
       profileUrl: row.profileUrl ?? undefined,
+      profile: cachedProfile,
       meta: {
         ...(row.meta ?? {}),
         cached: true,
