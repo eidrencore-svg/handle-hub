@@ -8,7 +8,21 @@ type CheckResult = {
   kind: string;
   status: string;
   profileUrl?: string;
+  meta?: Record<string, unknown>;
 };
+
+function statusColor(status: string): string {
+  switch (status) {
+    case "available":
+      return "#0a7a32";
+    case "taken":
+      return "#b00020";
+    case "invalid":
+      return "#8a5a00";
+    default:
+      return "#555";
+  }
+}
 
 export default function HomePage() {
   const [username, setUsername] = useState("");
@@ -62,6 +76,8 @@ export default function HomePage() {
               style={{
                 display: "flex",
                 justifyContent: "space-between",
+                alignItems: "baseline",
+                gap: 16,
                 padding: "0.75rem 0",
                 borderBottom: "1px solid #eee",
               }}
@@ -69,8 +85,36 @@ export default function HomePage() {
               <span>
                 <strong>{r.platformName}</strong>{" "}
                 <span style={{ color: "#777" }}>({r.kind})</span>
+                {r.status === "taken" && r.profileUrl ? (
+                  <>
+                    {" "}
+                    <a
+                      href={r.profileUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ fontSize: 14 }}
+                    >
+                      profile
+                    </a>
+                  </>
+                ) : null}
+                {r.status === "unknown" &&
+                typeof r.meta?.note === "string" ? (
+                  <div style={{ color: "#777", fontSize: 13, marginTop: 4 }}>
+                    {r.meta.note}
+                  </div>
+                ) : null}
               </span>
-              <span>{r.status}</span>
+              <span
+                style={{
+                  color: statusColor(r.status),
+                  fontWeight: 600,
+                  textTransform: "capitalize",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {r.status}
+              </span>
             </li>
           ))}
         </ul>
