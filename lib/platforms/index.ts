@@ -17,8 +17,10 @@ export type {
   UsernameStatus,
   CheckResult,
   Confidence,
+  ProfileInfo,
 } from "./types";
 export type { CheckReason, PresentedResult } from "./messages";
+export { formatCount, sanitizeBio } from "./profile";
 export { userMessageFor, isEstimate, presentResult } from "./messages";
 
 export const adapters: PlatformAdapter[] = [

@@ -1,4 +1,7 @@
 import type { CheckReason } from "./messages";
+import type { ProfileInfo } from "./profile";
+
+export type { ProfileInfo } from "./profile";
 
 export type PlatformKind = "gaming" | "social";
 
@@ -14,6 +17,8 @@ export interface CheckResult {
   reason?: CheckReason;
   /** high = official/signup; medium = structured page; low = heuristic. */
   confidence?: Confidence;
+  /** Public profile card fields when status is taken. */
+  profile?: ProfileInfo;
   meta?: Record<string, unknown>;
 }
 
