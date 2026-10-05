@@ -1,5 +1,5 @@
 import type { PlatformAdapter, CheckResult } from "./types";
-import { fetchWithTimeout, isAbortError } from "./http";
+import { fetchWithRetry, isAbortError, looksLikeChallenge } from "./http";
 
 const HANDLE_RE = /^[A-Za-z0-9._]{1,30}$/;
 
@@ -15,14 +15,18 @@ export const instagramAdapter: PlatformAdapter = {
     if (!HANDLE_RE.test(username) || !/[A-Za-z0-9]/.test(username)) {
       return {
         status: "invalid",
+        reason: "invalid_format",
+        confidence: "high",
         meta: {
-          note: "Instagram usernames are 1–30 chars: letters, numbers, periods, underscores",
+          method: "validation",
+          devNote:
+            "Instagram usernames are 1–30 chars: letters, numbers, periods, underscores",
         },
       };
     }
 
     try {
-      const res = await fetchWithTimeout(
+      const res = await fetchWithRetry(
         `https://i.instagram.com/api/v1/users/web_profile_info/?username=${encodeURIComponent(username)}`,
         {
           headers: {
@@ -33,28 +37,70 @@ export const instagramAdapter: PlatformAdapter = {
         }
       );
 
-      if (res.status === 200) {
-        const data = (await res.json()) as {
-          data?: { user?: { username?: string; id?: string } };
+      const body = await res.text();
+      if (looksLikeChallenge(body, res.status)) {
+        return {
+          status: "unknown",
+          reason: "platform_blocked",
+          confidence: "low",
+          meta: { method: "web_profile_info", devNote: "Challenge/login wall" },
         };
-        if (data.data?.user?.username) {
+      }
+
+      if (res.status === 200) {
+        try {
+          const data = JSON.parse(body) as {
+            data?: { user?: { username?: string; id?: string } };
+          };
+          if (data.data?.user?.id || data.data?.user?.username) {
+            return {
+              status: "taken",
+              confidence: "medium",
+              reason: "best_effort",
+              profileUrl: `https://www.instagram.com/${encodeURIComponent(username)}/`,
+              meta: {
+                method: "web_profile_info",
+                userId: data.data.user.id,
+              },
+            };
+          }
+        } catch {
           return {
-            status: "taken",
-            profileUrl: `https://www.instagram.com/${encodeURIComponent(username)}/`,
-            meta: {
-              method: "web_profile_info",
-              userId: data.data.user.id,
-            },
+            status: "unknown",
+            reason: "unexpected_response",
+            confidence: "low",
+            meta: { method: "web_profile_info", devNote: "Invalid JSON on 200" },
           };
         }
       }
 
       if (res.status === 404) {
+        try {
+          const data = JSON.parse(body) as { message?: string; status?: string };
+          if (
+            /user not found|not found/i.test(String(data.message || "")) ||
+            data.status === "fail"
+          ) {
+            return {
+              status: "available",
+              confidence: "medium",
+              reason: "best_effort",
+              meta: {
+                method: "web_profile_info",
+                devNote:
+                  "API reports no user — Instagram may still reserve some names.",
+              },
+            };
+          }
+        } catch {
+        }
         return {
-          status: "available",
+          status: "unknown",
+          reason: "unexpected_response",
+          confidence: "low",
           meta: {
             method: "web_profile_info",
-            note: "No public profile — Instagram may still reserve some names.",
+            devNote: "HTTP 404 without clear user-not-found JSON",
           },
         };
       }
@@ -62,25 +108,32 @@ export const instagramAdapter: PlatformAdapter = {
       if (res.status === 401 || res.status === 429) {
         return {
           status: "unknown",
+          reason: "rate_limited",
+          confidence: "low",
           meta: {
             method: "web_profile_info",
-            note: "Instagram rate-limited or required login for this probe",
+            devNote: "Instagram rate-limited or required login",
           },
         };
       }
 
       return {
         status: "unknown",
+        reason: "unexpected_response",
+        confidence: "low",
         meta: {
           method: "web_profile_info",
-          note: `Unexpected HTTP ${res.status}`,
+          devNote: `Unexpected HTTP ${res.status}`,
         },
       };
     } catch (err) {
       return {
         status: "unknown",
+        reason: isAbortError(err) ? "timeout" : "network_error",
+        confidence: "low",
         meta: {
-          note: isAbortError(err)
+          method: "web_profile_info",
+          devNote: isAbortError(err)
             ? "Instagram check timed out"
             : err instanceof Error
               ? err.message
