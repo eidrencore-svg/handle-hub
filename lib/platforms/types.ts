@@ -4,11 +4,16 @@ export type PlatformKind = "gaming" | "social";
 
 export type UsernameStatus = "available" | "taken" | "unknown" | "invalid";
 
+/** Signal strength for UI confidence badges. */
+export type Confidence = "high" | "medium" | "low";
+
 export interface CheckResult {
   status: UsernameStatus;
   profileUrl?: string;
   /** Machine-readable reason for UI messaging (see messages.ts). */
   reason?: CheckReason;
+  /** high = official/signup; medium = structured page; low = heuristic. */
+  confidence?: Confidence;
   meta?: Record<string, unknown>;
 }
 

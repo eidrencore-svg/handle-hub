@@ -1,4 +1,4 @@
-import type { CheckResult, UsernameStatus } from "./types";
+import type { CheckResult, Confidence, UsernameStatus } from "./types";
 
 /** Stable reason codes adapters (or presenters) attach to results. */
 export type CheckReason =
@@ -27,6 +27,12 @@ const USER_MESSAGES: Record<CheckReason, string> = {
   invalid_format: "This username isn't valid on this platform.",
 };
 
+const HIGH_METHODS =
+  /resolvevanity|psn_onlineids|helix_users|x_api_v2|youtube_data_api|username_attempt|gamertags_reserve|username_available/;
+
+const MEDIUM_METHODS =
+  /community_xml|twitch_gql|tiktok_oembed|x_com_profile|x_syndication|youtube_handle_page|web_profile|openxbl_search|user_about/;
+
 export function userMessageFor(
   status: UsernameStatus,
   reason?: CheckReason
@@ -45,8 +51,18 @@ export function userMessageFor(
   return USER_MESSAGES[reason] || USER_MESSAGES.unexpected_response;
 }
 
-export function isEstimate(reason?: CheckReason): boolean {
+export function isEstimate(reason?: CheckReason, confidence?: Confidence): boolean {
+  if (confidence === "low" || confidence === "medium") return true;
   return reason === "best_effort";
+}
+
+export function inferConfidence(result: CheckResult): Confidence {
+  if (result.confidence) return result.confidence;
+  if (result.status === "invalid" || result.status === "unknown") return "low";
+  const method = String(result.meta?.method ?? "").toLowerCase();
+  if (HIGH_METHODS.test(method)) return "high";
+  if (MEDIUM_METHODS.test(method)) return "medium";
+  return "low";
 }
 
 export function inferReason(result: CheckResult): CheckReason {
@@ -57,35 +73,28 @@ export function inferReason(result: CheckResult): CheckReason {
   const note = String(result.meta?.note ?? result.meta?.devNote ?? "").toLowerCase();
   const method = String(result.meta?.method ?? "").toLowerCase();
   const blob = `${note} ${method}`;
+  const confidence = inferConfidence(result);
 
   const bestEffortMethod =
-    /gql|oembed|community_xml|handle_page|openxbl_search|x_com_profile|web_profile|tiktok_oembed/.test(
-      method
-    ) || /best-effort|gql probe|html probe|oembed|community xml|@handle http/.test(note);
+    MEDIUM_METHODS.test(method) ||
+    /best-effort|gql probe|html probe|oembed|community xml|@handle http/.test(note);
 
-  // Taken/available from public probes are estimates — even if the note mentions optional keys.
   if (
     (result.status === "taken" || result.status === "available") &&
-    bestEffortMethod
+    (bestEffortMethod || confidence !== "high")
   ) {
-    return "best_effort";
+    if (HIGH_METHODS.test(method) && confidence === "high") return "ok";
+    if (bestEffortMethod || confidence !== "high") return "best_effort";
   }
 
   if (result.status === "taken" || result.status === "available") {
-    if (
-      /resolvevanity|psn_onlineids|helix_users|x_api_v2|youtube_data_api|username_attempt|gamertags_reserve/.test(
-        method
-      )
-    ) {
-      return "ok";
-    }
+    if (HIGH_METHODS.test(method)) return "ok";
     if (bestEffortMethod || /prefer |best-effort/.test(note)) return "best_effort";
     return "ok";
   }
 
-  // unknown / other
   if (/rate.?limit|429|required login/.test(blob)) return "rate_limited";
-  if (/blocked|challenged|bot\/network|network policy/.test(blob)) {
+  if (/blocked|challenged|bot\/network|network policy|captcha|login wall/.test(blob)) {
     return "platform_blocked";
   }
   if (
@@ -108,11 +117,13 @@ export type PresentedResult = CheckResult & {
   reason: CheckReason;
   userMessage?: string;
   estimate: boolean;
+  confidence: Confidence;
 };
 
 /** Normalize adapter output for the API/UI: friendly message + hidden tech notes. */
 export function presentResult(result: CheckResult): PresentedResult {
-  const reason = inferReason(result);
+  const confidence = inferConfidence(result);
+  const reason = inferReason({ ...result, confidence });
   const meta = { ...(result.meta ?? {}) };
   if (typeof meta.note === "string" && !meta.devNote) {
     meta.devNote = meta.note;
@@ -124,7 +135,8 @@ export function presentResult(result: CheckResult): PresentedResult {
   return {
     ...result,
     reason,
-    estimate: isEstimate(reason),
+    confidence,
+    estimate: isEstimate(reason, confidence),
     userMessage,
     meta,
   };
@@ -135,6 +147,7 @@ export function makeResult(
   status: UsernameStatus,
   options: {
     reason?: CheckReason;
+    confidence?: Confidence;
     profileUrl?: string;
     method?: string;
     devNote?: string;
@@ -152,6 +165,7 @@ export function makeResult(
   return {
     status,
     reason,
+    confidence: options.confidence,
     profileUrl: options.profileUrl,
     meta: {
       ...(options.method ? { method: options.method } : {}),
