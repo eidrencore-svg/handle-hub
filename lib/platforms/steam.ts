@@ -1,7 +1,20 @@
 import type { PlatformAdapter, CheckResult } from "./types";
 import { fetchWithRetry, isAbortError, looksLikeChallenge } from "./http";
+import { buildProfile, sanitizeBio, xmlTag } from "./profile";
 
 const VANITY_RE = /^[a-zA-Z0-9_-]{2,32}$/;
+
+function profileFromXml(body: string) {
+  return buildProfile({
+    displayName: sanitizeBio(xmlTag(body, "steamID"), 80),
+    avatarUrl: xmlTag(body, "avatarFull") || xmlTag(body, "avatarMedium"),
+    bio: sanitizeBio(xmlTag(body, "summary") || xmlTag(body, "headline")),
+    extra: {
+      ...(xmlTag(body, "realname") ? { realName: sanitizeBio(xmlTag(body, "realname"), 80)! } : {}),
+      ...(xmlTag(body, "location") ? { location: sanitizeBio(xmlTag(body, "location"), 80)! } : {}),
+    },
+  });
+}
 
 async function checkViaWebApi(
   username: string,
@@ -33,11 +46,24 @@ async function checkViaWebApi(
   const success = data.response?.success;
 
   if (success === 1 && data.response?.steamid) {
+    // Enrich with public community XML (no private data)
+    let profile;
+    try {
+      const xmlRes = await fetchWithRetry(
+        `https://steamcommunity.com/id/${encodeURIComponent(username)}/?xml=1`,
+        { headers: { Accept: "application/xml,text/xml,*/*" } }
+      );
+      const xml = await xmlRes.text();
+      if (!looksLikeChallenge(xml, xmlRes.status)) profile = profileFromXml(xml);
+    } catch {
+      /* ignore enrich errors */
+    }
     return {
       status: "taken",
       confidence: "high",
       reason: "ok",
       profileUrl: `https://steamcommunity.com/id/${encodeURIComponent(username)}`,
+      profile,
       meta: {
         method: "ResolveVanityURL",
         steamId: data.response.steamid,
@@ -87,6 +113,7 @@ async function checkViaCommunityXml(username: string): Promise<CheckResult> {
       confidence: "medium",
       reason: "best_effort",
       profileUrl: `https://steamcommunity.com/id/${encodeURIComponent(username)}`,
+      profile: profileFromXml(body),
       meta: { method: "community_xml", steamId: idMatch[1] },
     };
   }

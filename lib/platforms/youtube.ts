@@ -1,20 +1,49 @@
 import type { PlatformAdapter, CheckResult } from "./types";
 import {
   BROWSER_UA,
+  extractMeta,
   extractTitle,
   fetchWithRetry,
   isAbortError,
   looksLikeChallenge,
 } from "./http";
+import { buildProfile, parseCount, sanitizeBio } from "./profile";
 
 const YT_HANDLE_RE = /^[A-Za-z0-9._-]{3,30}$/;
+
+function profileFromYtHtml(body: string) {
+  const ogTitle = extractMeta(body, "og:title");
+  const ogImage = extractMeta(body, "og:image");
+  const ogDesc = extractMeta(body, "og:description");
+  // Page header (pageHeaderViewModel) metadata is the channel's own count;
+  // subscriberCountText elsewhere can belong to featured/related channels.
+  const subLabel =
+    body.match(/"accessibilityLabel":"([\d.,]+\s*(?:thousand|million|billion)?\s*subscribers?)"/i)?.[1] ||
+    body.match(/"content":"([\d.,]+[kmb]?\s*subscribers?)"/i)?.[1] ||
+    body.match(
+      /"subscriberCountText":\{"accessibility":\{"accessibilityData":\{"label":"([^"]+)"/
+    )?.[1];
+  const videosLabel =
+    body.match(/"accessibilityLabel":"([\d.,]+\s*(?:thousand|million)?\s*videos?)"/i)?.[1] ||
+    body.match(/"content":"([\d.,]+[kmb]?\s*videos?)"/i)?.[1];
+  const avatar =
+    body.match(/"avatar":\{"thumbnails":\[\{"url":"([^"]+)"/)?.[1] || ogImage;
+  return buildProfile({
+    displayName: ogTitle?.replace(/\s*-\s*YouTube\s*$/i, "").trim(),
+    avatarUrl: avatar,
+    bio: sanitizeBio(ogDesc),
+    followers: parseCount(subLabel),
+    posts: parseCount(videosLabel),
+    extra: subLabel ? { subscribersLabel: subLabel } : undefined,
+  });
+}
 
 async function checkViaDataApi(
   handle: string,
   apiKey: string
 ): Promise<CheckResult> {
   const url = new URL("https://www.googleapis.com/youtube/v3/channels");
-  url.searchParams.set("part", "snippet");
+  url.searchParams.set("part", "snippet,statistics");
   url.searchParams.set("forHandle", `@${handle}`);
   url.searchParams.set("key", apiKey);
 
@@ -45,19 +74,41 @@ async function checkViaDataApi(
   }
 
   const data = (await res.json()) as {
-    items?: Array<{ id?: string; snippet?: { title?: string } }>;
+    items?: Array<{
+      id?: string;
+      snippet?: {
+        title?: string;
+        description?: string;
+        thumbnails?: { high?: { url?: string }; default?: { url?: string } };
+      };
+      statistics?: {
+        subscriberCount?: string;
+        videoCount?: string;
+        viewCount?: string;
+      };
+    }>;
   };
   const item = data.items?.[0];
   if (item?.id) {
+    const sn = item.snippet;
+    const st = item.statistics;
     return {
       status: "taken",
       confidence: "high",
       reason: "ok",
       profileUrl: `https://www.youtube.com/@${encodeURIComponent(handle)}`,
+      profile: buildProfile({
+        displayName: sn?.title,
+        avatarUrl: sn?.thumbnails?.high?.url || sn?.thumbnails?.default?.url,
+        bio: sanitizeBio(sn?.description),
+        followers: parseCount(st?.subscriberCount),
+        posts: parseCount(st?.videoCount),
+        extra: st?.viewCount ? { views: Number(st.viewCount) } : undefined,
+      }),
       meta: {
         method: "youtube_data_api",
         channelId: item.id,
-        title: item.snippet?.title,
+        title: sn?.title,
       },
     };
   }
@@ -126,6 +177,7 @@ async function checkViaPublicHandle(handle: string): Promise<CheckResult> {
       confidence: "medium",
       reason: "best_effort",
       profileUrl,
+      profile: profileFromYtHtml(body),
       meta: { method: "youtube_handle_page", title: title.slice(0, 120) },
     };
   }
