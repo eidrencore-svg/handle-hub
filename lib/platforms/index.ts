@@ -5,6 +5,10 @@ import { playstationAdapter } from "./playstation";
 import { twitterAdapter } from "./twitter";
 import { instagramAdapter } from "./instagram";
 import { tiktokAdapter } from "./tiktok";
+import { discordAdapter } from "./discord";
+import { twitchAdapter } from "./twitch";
+import { redditAdapter } from "./reddit";
+import { youtubeAdapter } from "./youtube";
 
 export type { PlatformAdapter, PlatformKind, UsernameStatus, CheckResult } from "./types";
 
@@ -12,9 +16,13 @@ export const adapters: PlatformAdapter[] = [
   steamAdapter,
   xboxAdapter,
   playstationAdapter,
+  twitchAdapter,
   twitterAdapter,
   instagramAdapter,
   tiktokAdapter,
+  discordAdapter,
+  redditAdapter,
+  youtubeAdapter,
 ];
 
 export async function checkAllPlatforms(username: string) {
