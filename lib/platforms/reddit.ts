@@ -1,5 +1,5 @@
 import type { PlatformAdapter, CheckResult } from "./types";
-import { fetchWithTimeout, isAbortError } from "./http";
+import { fetchWithRetry, isAbortError } from "./http";
 
 const REDDIT_RE = /^[A-Za-z0-9_-]{3,20}$/;
 const REDDIT_UA =
@@ -14,7 +14,7 @@ function looksBlocked(body: string, contentType: string | null): boolean {
 }
 
 async function checkViaAbout(username: string): Promise<CheckResult | null> {
-  const res = await fetchWithTimeout(
+  const res = await fetchWithRetry(
     `https://www.reddit.com/user/${encodeURIComponent(username)}/about.json`,
     {
       headers: {
@@ -32,19 +32,13 @@ async function checkViaAbout(username: string): Promise<CheckResult | null> {
       status: "unknown",
       meta: {
         method: "user_about",
-        note: "Reddit blocked or challenged this request (bot/network policy)",
+        devNote: "Reddit blocked or challenged this request (bot/network policy)",
       },
     };
   }
 
   if (res.status === 404) {
-    return {
-      status: "available",
-      meta: {
-        method: "user_about",
-        note: "No Reddit user profile — banned/deleted names may still be reserved.",
-      },
-    };
+    return null;
   }
 
   if (res.status === 200) {
@@ -56,6 +50,8 @@ async function checkViaAbout(username: string): Promise<CheckResult | null> {
       if (json.data?.name || json.kind === "t2") {
         return {
           status: "taken",
+          confidence: "medium",
+          reason: "best_effort",
           profileUrl: `https://www.reddit.com/user/${encodeURIComponent(username)}`,
           meta: {
             method: "user_about",
@@ -66,7 +62,7 @@ async function checkViaAbout(username: string): Promise<CheckResult | null> {
     } catch {
       return {
         status: "unknown",
-        meta: { method: "user_about", note: "Failed to parse Reddit JSON" },
+        meta: { method: "user_about", devNote: "Failed to parse Reddit JSON" },
       };
     }
   }
@@ -74,7 +70,7 @@ async function checkViaAbout(username: string): Promise<CheckResult | null> {
   if (res.status === 429) {
     return {
       status: "unknown",
-      meta: { method: "user_about", note: "Reddit rate-limited this check" },
+      meta: { method: "user_about", devNote: "Reddit rate-limited this check" },
     };
   }
 
@@ -84,7 +80,7 @@ async function checkViaAbout(username: string): Promise<CheckResult | null> {
 async function checkViaUsernameAvailable(
   username: string
 ): Promise<CheckResult> {
-  const res = await fetchWithTimeout(
+  const res = await fetchWithRetry(
     `https://www.reddit.com/api/username_available.json?user=${encodeURIComponent(username)}`,
     {
       headers: {
@@ -100,9 +96,11 @@ async function checkViaUsernameAvailable(
   if (looksBlocked(body, contentType)) {
     return {
       status: "unknown",
+      reason: "platform_blocked",
+      confidence: "low",
       meta: {
         method: "username_available",
-        note: "Reddit blocked or challenged this request (bot/network policy)",
+        devNote: "Reddit blocked or challenged this request (bot/network policy)",
       },
     };
   }
@@ -112,7 +110,7 @@ async function checkViaUsernameAvailable(
       status: "unknown",
       meta: {
         method: "username_available",
-        note: `Unexpected HTTP ${res.status}`,
+        devNote: `Unexpected HTTP ${res.status}`,
       },
     };
   }
@@ -121,12 +119,16 @@ async function checkViaUsernameAvailable(
   if (trimmed === "true") {
     return {
       status: "available",
+      confidence: "high",
+      reason: "ok",
       meta: { method: "username_available" },
     };
   }
   if (trimmed === "false") {
     return {
       status: "taken",
+      confidence: "high",
+      reason: "ok",
       profileUrl: `https://www.reddit.com/user/${encodeURIComponent(username)}`,
       meta: { method: "username_available" },
     };
@@ -145,14 +147,13 @@ async function checkViaUsernameAvailable(
       };
     }
   } catch {
-    // fall through
   }
 
   return {
     status: "unknown",
     meta: {
       method: "username_available",
-      note: "Unexpected Reddit username_available payload",
+      devNote: "Unexpected Reddit username_available payload",
     },
   };
 }
@@ -165,8 +166,11 @@ export const redditAdapter: PlatformAdapter = {
     if (!REDDIT_RE.test(username)) {
       return {
         status: "invalid",
+        reason: "invalid_format",
+        confidence: "high",
         meta: {
-          note: "Reddit usernames are 3–20 characters: letters, numbers, _ or -",
+          method: "validation",
+          devNote: "Reddit usernames are 3–20 characters: letters, numbers, _ or -",
         },
       };
     }
@@ -186,7 +190,7 @@ export const redditAdapter: PlatformAdapter = {
       return {
         status: "unknown",
         meta: {
-          note: isAbortError(err)
+          devNote: isAbortError(err)
             ? "Reddit check timed out"
             : err instanceof Error
               ? err.message

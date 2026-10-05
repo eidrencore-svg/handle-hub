@@ -170,6 +170,7 @@ export const xboxAdapter: PlatformAdapter = {
       return {
         status: "unknown",
         reason: "needs_credentials",
+        confidence: "low",
         meta: {
           method: "none",
           devNote:
