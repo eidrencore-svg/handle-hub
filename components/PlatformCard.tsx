@@ -10,11 +10,33 @@ export type CheckResult = {
   reason?: string;
   userMessage?: string;
   estimate?: boolean;
+  confidence?: "high" | "medium" | "low";
+  cached?: boolean;
   meta?: Record<string, unknown>;
 };
 
+function confidenceLabel(c?: string, estimate?: boolean): string | null {
+  if (c === "high") return "High confidence";
+  if (c === "medium") return "Medium";
+  if (c === "low" && (estimate || true)) return estimate ? "Low / Estimate" : "Low";
+  if (estimate) return "Estimate";
+  return null;
+}
+
+function confidenceClasses(c?: string): string {
+  switch (c) {
+    case "high":
+      return "bg-emerald-500/10 text-emerald-300/90 ring-emerald-500/20";
+    case "medium":
+      return "bg-sky-500/10 text-sky-300/90 ring-sky-500/20";
+    default:
+      return "bg-white/5 text-slate-400 ring-white/10";
+  }
+}
+
 export function PlatformCard({ result }: { result: CheckResult }) {
   const message = result.userMessage;
+  const conf = confidenceLabel(result.confidence, result.estimate);
 
   return (
     <article
@@ -36,6 +58,7 @@ export function PlatformCard({ result }: { result: CheckResult }) {
             </h3>
             <p className="mt-0.5 text-xs uppercase tracking-wide text-slate-400">
               {kindLabel(result.kind)}
+              {result.cached ? " · cached" : ""}
             </p>
           </div>
         </div>
@@ -45,9 +68,11 @@ export function PlatformCard({ result }: { result: CheckResult }) {
           >
             {result.status}
           </span>
-          {result.estimate ? (
-            <span className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-400 ring-1 ring-white/10">
-              Estimate
+          {conf ? (
+            <span
+              className={`rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ring-1 ${confidenceClasses(result.confidence)}`}
+            >
+              {conf}
             </span>
           ) : null}
         </div>
