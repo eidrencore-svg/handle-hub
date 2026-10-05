@@ -5,8 +5,55 @@ import {
   isAbortError,
   looksLikeChallenge,
 } from "./http";
+import { buildProfile, parseCount, sanitizeBio } from "./profile";
 
 const HANDLE_RE = /^[A-Za-z0-9._]{2,24}$/;
+
+function decodeTikTokUrl(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  return raw.replace(/\\u002F/g, "/").replace(/\\\//g, "/");
+}
+
+async function enrichFromPage(username: string) {
+  try {
+    const res = await fetchWithRetry(
+      `https://www.tiktok.com/@${encodeURIComponent(username)}`,
+      {
+        headers: {
+          "User-Agent": BROWSER_UA,
+          Accept: "text/html",
+          "Accept-Language": "en-US,en;q=0.9",
+        },
+      }
+    );
+    const html = await res.text();
+    const nickname = html.match(/"nickname":"([^"]+)"/)?.[1];
+    // Soft-block only when challenge page AND no structured creator JSON
+    if (!nickname && looksLikeChallenge(html, res.status)) return undefined;
+    const avatar = decodeTikTokUrl(
+      html.match(/"avatarLarger":"([^"]+)"/)?.[1] ||
+        html.match(/"avatarMedium":"([^"]+)"/)?.[1]
+    );
+    const signature = html.match(/"signature":"([^"]*)"/)?.[1];
+    const followers = parseCount(html.match(/"followerCount":(\d+)/)?.[1]);
+    const following = parseCount(html.match(/"followingCount":(\d+)/)?.[1]);
+    const posts = parseCount(html.match(/"videoCount":(\d+)/)?.[1]);
+    const verified = /"verified":true/.test(html);
+    const hearts = parseCount(html.match(/"heartCount":(\d+)/)?.[1]);
+    return buildProfile({
+      displayName: nickname,
+      avatarUrl: avatar,
+      bio: sanitizeBio(signature),
+      followers,
+      following,
+      posts,
+      verified: verified || undefined,
+      extra: hearts != null ? { likes: hearts } : undefined,
+    });
+  } catch {
+    return undefined;
+  }
+}
 
 export const tiktokAdapter: PlatformAdapter = {
   id: "tiktok",
@@ -54,26 +101,25 @@ export const tiktokAdapter: PlatformAdapter = {
             author_name?: string;
             author_url?: string;
             title?: string;
-            type?: string;
+            thumbnail_url?: string;
           };
-          if (data.author_url && /tiktok\.com\/@/i.test(data.author_url)) {
+          const taken =
+            (data.author_url && /tiktok\.com\/@/i.test(data.author_url)) ||
+            Boolean(data.author_name || data.title);
+          if (taken) {
+            const enriched = await enrichFromPage(username);
+            const profile =
+              enriched ||
+              buildProfile({
+                displayName: data.author_name,
+                avatarUrl: data.thumbnail_url,
+              });
             return {
               status: "taken",
               confidence: "medium",
               reason: "best_effort",
               profileUrl,
-              meta: {
-                method: "tiktok_oembed",
-                authorName: data.author_name,
-              },
-            };
-          }
-          if (data.author_name || data.title) {
-            return {
-              status: "taken",
-              confidence: "medium",
-              reason: "best_effort",
-              profileUrl,
+              profile,
               meta: {
                 method: "tiktok_oembed",
                 authorName: data.author_name,
@@ -109,6 +155,7 @@ export const tiktokAdapter: PlatformAdapter = {
             };
           }
         } catch {
+          /* fall through */
         }
         return {
           status: "unknown",

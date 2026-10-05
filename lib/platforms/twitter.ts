@@ -7,6 +7,7 @@ import {
   isAbortError,
   looksLikeChallenge,
 } from "./http";
+import { buildProfile, sanitizeBio } from "./profile";
 
 const HANDLE_RE = /^[A-Za-z0-9_]{1,15}$/;
 
@@ -15,7 +16,7 @@ async function checkViaApi(
   bearer: string
 ): Promise<CheckResult> {
   const res = await fetchWithRetry(
-    `https://api.x.com/2/users/by/username/${encodeURIComponent(username)}`,
+    `https://api.x.com/2/users/by/username/${encodeURIComponent(username)}?user.fields=description,profile_image_url,public_metrics,verified`,
     { headers: { Authorization: `Bearer ${bearer}` } }
   );
 
@@ -24,11 +25,33 @@ async function checkViaApi(
       data?: { id?: string; username?: string };
     };
     if (data.data?.id) {
+      const u = data.data as {
+        id?: string;
+        name?: string;
+        username?: string;
+        description?: string;
+        profile_image_url?: string;
+        public_metrics?: {
+          followers_count?: number;
+          following_count?: number;
+          tweet_count?: number;
+        };
+        verified?: boolean;
+      };
       return {
         status: "taken",
         confidence: "high",
         reason: "ok",
         profileUrl: `https://x.com/${encodeURIComponent(username)}`,
+        profile: buildProfile({
+          displayName: u.name || u.username,
+          avatarUrl: u.profile_image_url?.replace("_normal", "_400x400"),
+          bio: sanitizeBio(u.description),
+          followers: u.public_metrics?.followers_count,
+          following: u.public_metrics?.following_count,
+          posts: u.public_metrics?.tweet_count,
+          verified: u.verified,
+        }),
         meta: { method: "x_api_v2", userId: data.data.id },
       };
     }
@@ -105,11 +128,30 @@ async function checkViaSyndication(username: string): Promise<CheckResult | null
         String(u.screen_name || "").toLowerCase() === username.toLowerCase()
     );
     if (hit?.id != null) {
+      const row = hit as {
+        name?: string;
+        screen_name?: string;
+        profile_image_url_https?: string;
+        followers_count?: number;
+        friends_count?: number;
+        statuses_count?: number;
+        verified?: boolean;
+        description?: string;
+      };
       return {
         status: "taken",
         confidence: "medium",
         reason: "best_effort",
         profileUrl: `https://x.com/${encodeURIComponent(username)}`,
+        profile: buildProfile({
+          displayName: row.name || row.screen_name,
+          avatarUrl: row.profile_image_url_https?.replace("_normal", "_400x400"),
+          bio: sanitizeBio(row.description),
+          followers: row.followers_count,
+          following: row.friends_count,
+          posts: row.statuses_count,
+          verified: row.verified,
+        }),
         meta: { method: "x_syndication", userId: String(hit.id) },
       };
     }
@@ -160,11 +202,24 @@ async function checkViaPublicProfile(username: string): Promise<CheckResult> {
     /screen_name["']?\s*:\s*["']/i.test(body);
 
   if (takenSignals && !notFound) {
+    const ogImage = extractMeta(body, "og:image") || "";
+    const ogDesc = extractMeta(body, "og:description") || "";
+    const cleanName = (v: string) =>
+      v
+        .replace(/\s*\(@[^)]+\)\s*(?:\/|on)\s*X\s*$/i, "")
+        .replace(/\s*on X\s*$/i, "")
+        .trim();
+    const display = cleanName(ogTitle) || cleanName(title);
     return {
       status: "taken",
       confidence: "medium",
       reason: "best_effort",
       profileUrl: `https://x.com/${encodeURIComponent(username)}`,
+      profile: buildProfile({
+        displayName: display || undefined,
+        avatarUrl: ogImage || undefined,
+        bio: sanitizeBio(ogDesc),
+      }),
       meta: { method: "x_com_profile", title },
     };
   }
