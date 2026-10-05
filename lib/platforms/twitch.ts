@@ -1,5 +1,5 @@
 import type { PlatformAdapter, CheckResult } from "./types";
-import { BROWSER_UA, fetchWithTimeout, isAbortError } from "./http";
+import { BROWSER_UA, fetchWithRetry, fetchWithTimeout, isAbortError } from "./http";
 
 const TWITCH_RE = /^[a-zA-Z0-9_]{4,25}$/;
 
@@ -53,7 +53,7 @@ async function checkViaHelix(
     };
   }
 
-  const res = await fetchWithTimeout(
+  const res = await fetchWithRetry(
     `https://api.twitch.tv/helix/users?login=${encodeURIComponent(login)}`,
     {
       headers: {
@@ -88,21 +88,25 @@ async function checkViaHelix(
     return {
       status: "taken",
       profileUrl: `https://www.twitch.tv/${encodeURIComponent(login)}`,
+      confidence: "high",
+      reason: "ok",
       meta: { method: "helix_users", userId: user.id },
     };
   }
 
   return {
     status: "available",
+    confidence: "high",
+    reason: "ok",
     meta: {
       method: "helix_users",
-      note: "No Helix user for this login — reserved names may still be blocked.",
+      devNote: "No Helix user for this login — reserved names may still be blocked.",
     },
   };
 }
 
 async function checkViaGql(login: string): Promise<CheckResult> {
-  const res = await fetchWithTimeout("https://gql.twitch.tv/gql", {
+  const res = await fetchWithRetry("https://gql.twitch.tv/gql", {
     method: "POST",
     headers: {
       "Client-Id": TWITCH_WEB_CLIENT_ID,
@@ -142,10 +146,12 @@ async function checkViaGql(login: string): Promise<CheckResult> {
     return {
       status: "taken",
       profileUrl: `https://www.twitch.tv/${encodeURIComponent(login)}`,
+      confidence: "medium",
+      reason: "best_effort",
       meta: {
         method: "twitch_gql",
         userId: data.data.user.id,
-        note: "Best-effort public GQL probe; prefer TWITCH_CLIENT_ID + TWITCH_CLIENT_SECRET.",
+        devNote: "Public GQL probe; prefer TWITCH_CLIENT_ID + TWITCH_CLIENT_SECRET.",
       },
     };
   }
@@ -153,9 +159,11 @@ async function checkViaGql(login: string): Promise<CheckResult> {
   if (data.data && data.data.user === null) {
     return {
       status: "available",
+      confidence: "medium",
+      reason: "best_effort",
       meta: {
         method: "twitch_gql",
-        note: "No Twitch user found via GQL — reserved names may still be blocked.",
+        devNote: "No Twitch user found via GQL — reserved names may still be blocked.",
       },
     };
   }
@@ -175,8 +183,11 @@ export const twitchAdapter: PlatformAdapter = {
     if (!TWITCH_RE.test(login)) {
       return {
         status: "invalid",
+        reason: "invalid_format",
+        confidence: "high",
         meta: {
-          note: "Twitch usernames are 4–25 characters: letters, numbers, underscore",
+          method: "validation",
+          devNote: "Twitch usernames are 4–25 characters: letters, numbers, underscore",
         },
       };
     }
