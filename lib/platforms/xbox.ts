@@ -169,8 +169,10 @@ export const xboxAdapter: PlatformAdapter = {
 
       return {
         status: "unknown",
+        reason: "needs_credentials",
         meta: {
-          note:
+          method: "none",
+          devNote:
             "Set XBOX_AUTHORIZATION + XBOX_RESERVATION_ID for true availability, or OPENXBL_API_KEY for profile search.",
         },
       };
