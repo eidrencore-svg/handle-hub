@@ -1,5 +1,6 @@
 import type { PlatformAdapter, CheckResult } from "./types";
 import { fetchWithRetry, isAbortError } from "./http";
+import { buildProfile, sanitizeBio } from "./profile";
 
 const REDDIT_RE = /^[A-Za-z0-9_-]{3,20}$/;
 const REDDIT_UA =
@@ -44,18 +45,35 @@ async function checkViaAbout(username: string): Promise<CheckResult | null> {
   if (res.status === 200) {
     try {
       const json = JSON.parse(body) as {
-        data?: { name?: string; is_suspended?: boolean; id?: string };
+        data?: Record<string, unknown> & { name?: string; is_suspended?: boolean; id?: string };
         kind?: string;
       };
       if (json.data?.name || json.kind === "t2") {
+        const d = json.data as {
+          name?: string;
+          is_suspended?: boolean;
+          id?: string;
+          icon_img?: string;
+          snoovatar_img?: string;
+          total_karma?: number;
+          public_description?: string;
+          subreddit?: { public_description?: string; title?: string };
+        };
+        const avatar = (d.snoovatar_img || d.icon_img || "").split("?")[0] || undefined;
         return {
           status: "taken",
           confidence: "medium",
           reason: "best_effort",
           profileUrl: `https://www.reddit.com/user/${encodeURIComponent(username)}`,
+          profile: buildProfile({
+            displayName: d.subreddit?.title || d.name,
+            avatarUrl: avatar,
+            bio: sanitizeBio(d.public_description || d.subreddit?.public_description),
+            extra: typeof d.total_karma === "number" ? { karma: d.total_karma } : undefined,
+          }),
           meta: {
             method: "user_about",
-            suspended: Boolean(json.data?.is_suspended),
+            suspended: Boolean(d.is_suspended),
           },
         };
       }

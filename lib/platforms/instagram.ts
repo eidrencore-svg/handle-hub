@@ -1,5 +1,6 @@
 import type { PlatformAdapter, CheckResult } from "./types";
 import { fetchWithRetry, isAbortError, looksLikeChallenge } from "./http";
+import { buildProfile, sanitizeBio } from "./profile";
 
 const HANDLE_RE = /^[A-Za-z0-9._]{1,30}$/;
 
@@ -52,15 +53,38 @@ export const instagramAdapter: PlatformAdapter = {
           const data = JSON.parse(body) as {
             data?: { user?: { username?: string; id?: string } };
           };
-          if (data.data?.user?.id || data.data?.user?.username) {
+          const user = data.data?.user as
+            | {
+                id?: string;
+                username?: string;
+                full_name?: string;
+                biography?: string;
+                profile_pic_url?: string;
+                profile_pic_url_hd?: string;
+                is_verified?: boolean;
+                edge_followed_by?: { count?: number };
+                edge_follow?: { count?: number };
+                edge_owner_to_timeline_media?: { count?: number };
+              }
+            | undefined;
+          if (user?.id || user?.username) {
             return {
               status: "taken",
               confidence: "medium",
               reason: "best_effort",
               profileUrl: `https://www.instagram.com/${encodeURIComponent(username)}/`,
+              profile: buildProfile({
+                displayName: user.full_name || user.username,
+                avatarUrl: user.profile_pic_url_hd || user.profile_pic_url,
+                bio: sanitizeBio(user.biography),
+                followers: user.edge_followed_by?.count,
+                following: user.edge_follow?.count,
+                posts: user.edge_owner_to_timeline_media?.count,
+                verified: user.is_verified,
+              }),
               meta: {
                 method: "web_profile_info",
-                userId: data.data.user.id,
+                userId: user.id,
               },
             };
           }
