@@ -4,6 +4,25 @@ import { BROWSER_UA, fetchWithRetry, isAbortError } from "./http";
 // Discord unique usernames: 2–32 chars, lowercase letters, numbers, underscore, period.
 const DISCORD_RE = /^[a-z0-9._]{2,32}$/;
 
+/** Discord's signup check shares one rate-limit bucket per network; remember its retry_after. */
+let cooldownUntil = 0;
+
+function rateLimited(retryAfterSec: number): CheckResult {
+  const mins = Math.max(1, Math.ceil(retryAfterSec / 60));
+  return {
+    status: "unknown",
+    reason: "rate_limited",
+    confidence: "low",
+    meta: {
+      method: "username_attempt_unauthed",
+      devNote: `Discord rate-limited this network (retry_after ${Math.round(retryAfterSec)}s)`,
+      userMessage: `Discord limits how many names one network can check — try again in about ${mins} min.`,
+      retryAfterSec: Math.round(retryAfterSec),
+      noRetry: retryAfterSec > 5,
+    },
+  };
+}
+
 export const discordAdapter: PlatformAdapter = {
   id: "discord",
   name: "Discord",
@@ -22,6 +41,8 @@ export const discordAdapter: PlatformAdapter = {
       };
     }
 
+    if (Date.now() < cooldownUntil) return rateLimited((cooldownUntil - Date.now()) / 1000);
+
     try {
       const res = await fetchWithRetry(
         "https://discord.com/api/v9/unique-username/username-attempt-unauthed",
@@ -31,21 +52,19 @@ export const discordAdapter: PlatformAdapter = {
             "Content-Type": "application/json",
             Accept: "application/json",
             "User-Agent": BROWSER_UA,
+            Origin: "https://discord.com",
+            Referer: "https://discord.com/register",
           },
           body: JSON.stringify({ username: handle }),
+          maxRetries: 0,
         }
       );
 
       if (res.status === 429) {
-        return {
-          status: "unknown",
-          reason: "rate_limited",
-          confidence: "low",
-          meta: {
-            method: "username_attempt_unauthed",
-            devNote: "Discord rate-limited this check",
-          },
-        };
+        const data = (await res.json().catch(() => ({}))) as { retry_after?: number };
+        const retryAfter = Number(data.retry_after ?? res.headers.get("retry-after") ?? 60);
+        if (retryAfter > 5) cooldownUntil = Date.now() + retryAfter * 1000;
+        return rateLimited(retryAfter);
       }
 
       if (!res.ok) {
