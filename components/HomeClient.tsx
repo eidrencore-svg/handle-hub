@@ -8,6 +8,7 @@ import {
   type CheckResult,
 } from "@/components/PlatformCard";
 import { FILTERS, type FilterKey } from "@/components/statusStyles";
+import { AllSites } from "@/components/AllSites";
 
 const SKELETON_COUNT = 10;
 
@@ -180,7 +181,7 @@ export default function HomeClient() {
           <p className="mx-auto mt-5 max-w-2xl text-balance text-base leading-relaxed text-slate-400 sm:text-lg">
             Search once across gaming and social platforms. Instant availability
             signals for Steam, Xbox, PlayStation, Twitch, Discord, X, Instagram,
-            TikTok, Reddit, YouTube, and more.
+            TikTok, Reddit, YouTube — plus 1,500+ self-tested sites.
           </p>
 
           <form
@@ -384,10 +385,13 @@ export default function HomeClient() {
             )}
           </section>
         )}
+
+        {checkedUsername && !error ? <AllSites key={checkedUsername} username={checkedUsername} /> : null}
       </main>
 
       <footer className="relative z-10 border-t border-white/5 py-8 text-center text-xs text-slate-500">
-        Handle Hub · availability probes never invent results
+        Handle Hub · availability probes never invent results ·{" "}
+        <a href="/status" className="hover:text-slate-300">Platform health</a> · catalog data: WhatsMyName (CC BY-SA 4.0), Sherlock &amp; Maigret (MIT)
       </footer>
     </div>
   );
