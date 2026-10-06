@@ -67,6 +67,26 @@ export const discordAdapter: PlatformAdapter = {
         return rateLimited(retryAfter);
       }
 
+      if (res.status === 400) {
+        // Discord rejects banned words (e.g. "discord", "clyde") with a specific reason.
+        const body = (await res.json().catch(() => ({}))) as {
+          errors?: { username?: { _errors?: Array<{ code?: string; message?: string }> } };
+        };
+        const why = body.errors?.username?._errors?.[0];
+        if (why?.message) {
+          return {
+            status: "invalid",
+            reason: "invalid_format",
+            confidence: "high",
+            meta: {
+              method: "username_attempt_unauthed",
+              devNote: `Discord: ${why.code ?? "invalid"}`,
+              userMessage: `Discord won't allow this name: ${why.message.replace(/\.?$/, ".")}`,
+            },
+          };
+        }
+      }
+
       if (!res.ok) {
         return {
           status: "unknown",

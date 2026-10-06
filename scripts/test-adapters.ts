@@ -15,7 +15,7 @@ const KNOWN: Record<string, string[]> = {
   instagram: ["instagram", "cristiano", "natgeo"],
   tiktok: ["tiktok", "khaby.lame", "charlidamelio"],
   reddit: ["spez", "kn0thing"],
-  discord: ["discord"],
+  discord: ["ninja", "everyone"],
   default: ["ninja", "mrbeast"],
 };
 
