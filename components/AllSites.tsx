@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { statusBadgeClasses } from "@/components/statusStyles";
+import { SiteInitialTile } from "@/components/PlatformIcon";
 
 type ScanItem = {
   site: string;
@@ -29,6 +30,8 @@ const CATEGORIES = [
 const STATUSES = ["all", "taken", "available", "unknown"] as const;
 const ORDER: Record<string, number> = { taken: 0, available: 1, unknown: 2, invalid: 3 };
 const PAGE = 120;
+/** No event (results or the 15s heartbeat) for this long → treat the stream as stalled. */
+const STALL_MS = 35_000;
 
 function hostLabel(url?: string) {
   try {
@@ -41,13 +44,15 @@ function hostLabel(url?: string) {
 export function AllSites({ username }: { username: string }) {
   const [items, setItems] = useState<Map<string, ScanItem>>(new Map());
   const [total, setTotal] = useState(0);
-  const [phase, setPhase] = useState<"connecting" | "scanning" | "done" | "error">("connecting");
+  const [phase, setPhase] = useState<"connecting" | "preparing" | "scanning" | "done" | "error">("connecting");
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [category, setCategory] = useState<(typeof CATEGORIES)[number]["id"]>("all");
   const [status, setStatus] = useState<(typeof STATUSES)[number]>("all");
   const [query, setQuery] = useState("");
   const [limit, setLimit] = useState(PAGE);
   const [durationMs, setDurationMs] = useState<number | null>(null);
+  const [attempt, setAttempt] = useState(0);
   const buffer = useRef<ScanItem[]>([]);
 
   useEffect(() => {
@@ -55,9 +60,12 @@ export function AllSites({ username }: { username: string }) {
     setTotal(0);
     setPhase("connecting");
     setError(null);
+    setNotice(null);
     setDurationMs(null);
     setLimit(PAGE);
     buffer.current = [];
+    let gotMeta = false;
+    let finished = false;
     const es = new EventSource(`/api/scan?username=${encodeURIComponent(username)}`);
     // Batch DOM updates: flush buffered results ~6x/sec.
     const flush = window.setInterval(() => {
@@ -69,30 +77,78 @@ export function AllSites({ username }: { username: string }) {
         return next;
       });
     }, 160);
+    const fail = (message: string) => {
+      if (finished) return;
+      finished = true;
+      es.close();
+      setPhase("error");
+      setError(message);
+    };
+    let stall = window.setTimeout(() => fail("The scan stopped responding."), STALL_MS);
+    const alive = () => {
+      window.clearTimeout(stall);
+      stall = window.setTimeout(() => fail("The scan stopped responding."), STALL_MS);
+    };
+    es.addEventListener("ping", alive);
+    es.addEventListener("status", (e) => {
+      alive();
+      const d = JSON.parse((e as MessageEvent).data);
+      setPhase("preparing");
+      setNotice(d.message ?? "Preparing…");
+    });
     es.addEventListener("meta", (e) => {
+      alive();
+      gotMeta = true;
       const d = JSON.parse((e as MessageEvent).data);
       setTotal(d.total);
+      setNotice(null);
       setPhase("scanning");
     });
-    es.addEventListener("result", (e) => buffer.current.push(JSON.parse((e as MessageEvent).data)));
+    es.addEventListener("result", (e) => {
+      alive();
+      buffer.current.push(JSON.parse((e as MessageEvent).data));
+    });
+    es.addEventListener("error", (e) => {
+      // Server-sent `event: error` (has data) — connection errors are handled by onerror below.
+      const data = (e as MessageEvent).data;
+      if (typeof data !== "string") return;
+      try {
+        fail(JSON.parse(data).message ?? "The scan failed.");
+      } catch {
+        fail("The scan failed.");
+      }
+    });
     es.addEventListener("done", (e) => {
+      window.clearTimeout(stall);
       const d = JSON.parse((e as MessageEvent).data);
+      if (finished) return es.close();
+      finished = true;
+      es.close();
+      if (!d.total) {
+        setPhase("error");
+        setError((prev) => prev ?? "No sites were available to scan.");
+        return;
+      }
       setDurationMs(d.durationMs);
       setPhase("done");
-      es.close();
     });
     es.onerror = () => {
-      es.close();
-      setPhase((p) => (p === "done" ? p : "error"));
-      setError("Scan stream interrupted — partial results shown.");
+      if (finished) return;
+      fail(
+        gotMeta
+          ? "The connection to the scan dropped — partial results are shown."
+          : "Couldn't start the site scan. The server may be busy or rate-limiting scans."
+      );
     };
     return () => {
+      finished = true;
       es.close();
       window.clearInterval(flush);
+      window.clearTimeout(stall);
       const batch = buffer.current.splice(0);
       if (batch.length) setItems((prev) => new Map([...prev, ...batch.map((b) => [b.site, b] as const)]));
     };
-  }, [username]);
+  }, [username, attempt]);
 
   const all = useMemo(() => [...items.values()], [items]);
   const counts = useMemo(() => {
@@ -136,23 +192,39 @@ export function AllSites({ username }: { username: string }) {
             {phase === "done" && durationMs != null ? (
               <span className="text-slate-500"> · {(durationMs / 1000).toFixed(1)}s</span>
             ) : null}
+            {phase === "connecting" ? <span className="text-slate-500"> · connecting…</span> : null}
           </p>
         </div>
 
         <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-white/5" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
           <div
-            className={`h-full rounded-full bg-gradient-to-r from-accent to-accent-glow transition-[width] duration-300 ${phase === "scanning" || phase === "connecting" ? "animate-pulse" : ""}`}
-            style={{ width: `${phase === "done" ? 100 : pct}%` }}
+            className={`h-full rounded-full transition-[width] duration-300 ${phase === "error" ? "bg-amber-400/70" : "bg-gradient-to-r from-accent to-accent-glow"} ${phase === "scanning" || phase === "connecting" || phase === "preparing" ? "animate-pulse" : ""}`}
+            style={{ width: `${phase === "done" ? 100 : phase === "preparing" || phase === "connecting" ? Math.max(pct, 4) : pct}%` }}
           />
         </div>
 
         <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs">
           <span className="font-medium text-rose-300">{counts.taken} taken</span>
           <span className="font-medium text-emerald-300">{counts.available} available</span>
-          <span className="font-medium text-slate-300">{counts.unknown} unknown</span>
+          <span className="font-medium text-slate-300">{counts.unknown} unclear</span>
           {counts.invalid ? <span className="font-medium text-amber-300">{counts.invalid} not allowed</span> : null}
-          {error ? <span className="text-amber-300">{error}</span> : null}
         </div>
+
+        {notice && phase === "preparing" ? (
+          <p className="mt-3 text-xs text-slate-400" role="status">{notice}</p>
+        ) : null}
+        {error ? (
+          <div role="alert" className="mt-3 flex flex-col gap-2 rounded-xl border border-amber-300/20 bg-amber-400/[0.06] px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs leading-relaxed text-amber-100">{error}</p>
+            <button
+              type="button"
+              onClick={() => setAttempt((a) => a + 1)}
+              className="shrink-0 rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white ring-1 ring-white/15 hover:bg-white/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              Retry scan
+            </button>
+          </div>
+        ) : null}
 
         <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="Categories">
@@ -208,17 +280,25 @@ export function AllSites({ username }: { username: string }) {
             className="flex items-center justify-between gap-2 rounded-xl border border-white/5 bg-ink-800/60 px-3 py-2.5 transition hover:border-accent/30"
             title={i.reason ? `${i.name}: ${i.reason}` : i.name}
           >
-            <div className="min-w-0">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <SiteInitialTile name={i.name} />
+              <div className="min-w-0">
               <p className="truncate text-sm font-medium text-slate-100">{i.name}</p>
               <p className="truncate text-[11px] text-slate-500">
                 {hostLabel(i.urlMain)}
                 {i.cached ? " · cached" : ""}
               </p>
+              </div>
             </div>
             <div className="flex shrink-0 items-center gap-2">
               {i.status === "taken" && i.profileUrl ? (
                 <a href={i.profileUrl} target="_blank" rel="noreferrer nofollow" className="text-[11px] font-medium text-accent-soft hover:underline">
                   Profile
+                </a>
+              ) : null}
+              {i.status === "unknown" && i.profileUrl ? (
+                <a href={i.profileUrl} target="_blank" rel="noreferrer nofollow" className="text-[11px] text-slate-400 hover:text-white hover:underline" title="Open the page to check by hand">
+                  Open
                 </a>
               ) : null}
               {i.status === "available" && i.claimUrl ? (
@@ -227,12 +307,12 @@ export function AllSites({ username }: { username: string }) {
                 </a>
               ) : null}
               <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize ${statusBadgeClasses(i.status)}`}>
-                {i.status === "invalid" ? "n/a" : i.status}
+                {i.status === "invalid" ? "n/a" : i.status === "unknown" ? "unclear" : i.status}
               </span>
             </div>
           </div>
         ))}
-        {phase !== "done" && visible.length < 8
+        {(phase === "connecting" || phase === "preparing" || phase === "scanning") && visible.length < 8
           ? Array.from({ length: 8 - visible.length }).map((_, k) => (
               <div key={`sk-${k}`} className="h-[54px] animate-pulse rounded-xl border border-white/5 bg-ink-800/40" />
             ))

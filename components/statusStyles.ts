@@ -4,7 +4,7 @@ export const FILTERS: { id: FilterKey; label: string }[] = [
   { id: "all", label: "All" },
   { id: "available", label: "Available" },
   { id: "taken", label: "Taken" },
-  { id: "unknown", label: "Unknown" },
+  { id: "unknown", label: "Not verified" },
 ];
 
 export function statusBadgeClasses(status: string): string {

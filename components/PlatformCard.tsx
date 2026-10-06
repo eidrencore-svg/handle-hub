@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { PlatformIcon } from "@/components/PlatformIcon";
+import { PlatformIcon, PlatformTile } from "@/components/PlatformIcon";
 import { kindLabel, statusBadgeClasses } from "@/components/statusStyles";
 import { formatCount, type ProfileInfo } from "@/lib/platforms/profile";
 
@@ -16,6 +16,9 @@ export type CheckResult = {
   estimate?: boolean;
   confidence?: "high" | "medium" | "low";
   cached?: boolean;
+  /** Public page where the user can confirm by hand. */
+  checkUrl?: string | null;
+  pass?: number;
   profile?: ProfileInfo;
   meta?: Record<string, unknown>;
 };
@@ -108,7 +111,7 @@ function ProfileBlock({
           <div className="flex h-full w-full items-center justify-center">
             <PlatformIcon
               platformId={platformId}
-              className="h-5 w-5 opacity-70"
+              className="h-5 w-5"
               title={platformName}
             />
           </div>
@@ -136,25 +139,50 @@ function ProfileBlock({
   );
 }
 
-export function PlatformCard({ result }: { result: CheckResult }) {
+function ExternalIcon() {
+  return (
+    <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" aria-hidden fill="currentColor">
+      <path d="M11 3h6v6h-2V6.41l-6.3 6.3-1.4-1.42L13.58 5H11V3z" />
+      <path d="M5 5h4v2H5v8h8v-4h2v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z" />
+    </svg>
+  );
+}
+
+function RetryIcon({ spinning }: { spinning?: boolean }) {
+  return (
+    <svg viewBox="0 0 20 20" className={`h-3.5 w-3.5 ${spinning ? "animate-spin" : ""}`} aria-hidden fill="currentColor">
+      <path d="M10 3a7 7 0 0 1 6.32 4H14v2h5V4h-2v1.68A9 9 0 1 0 19 11h-2a7 7 0 1 1-7-8z" />
+    </svg>
+  );
+}
+
+const DISCORD_HINT = "Discord has no public profile pages. To confirm, open Discord → Settings → My Account → Username.";
+
+export function PlatformCard({
+  result,
+  onRetry,
+  retrying = false,
+}: {
+  result: CheckResult;
+  onRetry?: () => void;
+  retrying?: boolean;
+}) {
   const message = result.userMessage;
   const conf = confidenceLabel(result.confidence, result.estimate);
   const showProfile = result.status === "taken" && result.profile;
+  const isUnknown = result.status === "unknown";
 
   return (
     <article
-      className="group relative flex flex-col rounded-2xl border border-white/10 bg-ink-800/70 p-4 shadow-card backdrop-blur transition hover:border-accent/40 hover:bg-ink-700/80"
-      title={message}
+      className={`group relative flex flex-col rounded-2xl border p-4 shadow-card backdrop-blur transition ${
+        isUnknown
+          ? "border-sky-300/15 bg-ink-800/70 hover:border-sky-300/30"
+          : "border-white/10 bg-ink-800/70 hover:border-accent/40 hover:bg-ink-700/80"
+      }`}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-3">
-          <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-ink-950/60">
-            <PlatformIcon
-              platformId={result.platformId}
-              className="h-5 w-5"
-              title={result.platformName}
-            />
-          </div>
+          <PlatformTile platformId={result.platformId} title={result.platformName} />
           <div className="min-w-0">
             <h3 className="truncate text-base font-semibold text-white">
               {result.platformName}
@@ -167,11 +195,13 @@ export function PlatformCard({ result }: { result: CheckResult }) {
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
           <span
-            className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${statusBadgeClasses(result.status)}`}
+            className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${
+              isUnknown ? "bg-sky-400/10 text-sky-200 ring-1 ring-sky-300/25" : statusBadgeClasses(result.status)
+            }`}
           >
-            {result.status}
+            {isUnknown ? "Not verified" : result.status === "invalid" ? "Not allowed" : result.status}
           </span>
-          {conf ? (
+          {conf && !isUnknown && result.status !== "invalid" ? (
             <span
               className={`rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ring-1 ${confidenceClasses(result.confidence)}`}
             >
@@ -189,26 +219,62 @@ export function PlatformCard({ result }: { result: CheckResult }) {
         />
       ) : null}
 
-      <div className="mt-4 flex min-h-[1.25rem] items-center justify-between gap-2">
-        {result.status === "taken" && result.profileUrl ? (
-          <a
-            href={result.profileUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="text-sm font-medium text-accent-soft underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          >
-            View profile
-          </a>
-        ) : (
-          <span className="text-sm text-slate-500">—</span>
-        )}
-      </div>
-
-      {message ? (
-        <p className="mt-3 line-clamp-2 text-xs leading-relaxed text-slate-400">
-          {message}
-        </p>
-      ) : null}
+      {isUnknown ? (
+        <div className="mt-3 rounded-xl border border-sky-300/10 bg-sky-400/[0.04] p-3">
+          <p className="text-xs leading-relaxed text-slate-300">
+            {message || "We couldn't get a clear answer automatically."}{" "}
+            <span className="text-slate-400">
+              {result.checkUrl ? "Confirm it yourself in one tap:" : result.platformId === "discord" ? DISCORD_HINT : ""}
+            </span>
+          </p>
+          <div className="mt-2.5 flex flex-wrap gap-2">
+            {result.checkUrl ? (
+              <a
+                href={result.checkUrl}
+                target="_blank"
+                rel="noreferrer nofollow"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white ring-1 ring-white/15 transition hover:bg-white/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                Check on {result.platformName}
+                <ExternalIcon />
+              </a>
+            ) : null}
+            {onRetry ? (
+              <button
+                type="button"
+                onClick={onRetry}
+                disabled={retrying}
+                className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-300 ring-1 ring-white/10 transition hover:bg-white/5 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60"
+              >
+                <RetryIcon spinning={retrying} />
+                {retrying ? "Retrying…" : "Retry"}
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="mt-4 flex min-h-[1.25rem] items-center justify-between gap-2">
+            {result.status === "taken" && result.profileUrl ? (
+              <a
+                href={result.profileUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-sm font-medium text-accent-soft underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                View profile
+              </a>
+            ) : (
+              <span className="text-sm text-slate-500">—</span>
+            )}
+          </div>
+          {message ? (
+            <p className={`mt-3 text-xs leading-relaxed ${result.status === "invalid" ? "text-amber-200/90" : "line-clamp-2 text-slate-400"}`}>
+              {message}
+            </p>
+          ) : null}
+        </>
+      )}
     </article>
   );
 }
