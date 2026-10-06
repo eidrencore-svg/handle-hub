@@ -80,12 +80,14 @@ export async function checkPlatformsSelective(
 ) {
   const selected = adapters.filter((a) => platformIds.includes(a.id));
   const results = await mapPool(selected, PLATFORM_CONCURRENCY, async (adapter) => {
+    const t0 = Date.now();
     const raw = await adapter.checkUsername(username);
     const result = presentResult(raw);
     return {
       platformId: adapter.id,
       platformName: adapter.name,
       kind: adapter.kind,
+      latencyMs: Date.now() - t0,
       ...result,
     };
   });

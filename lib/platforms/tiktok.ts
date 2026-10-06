@@ -86,6 +86,21 @@ export const tiktokAdapter: PlatformAdapter = {
       );
 
       const body = await res.text();
+      // Regional block: TikTok redirects whole networks to /<cc>/about (e.g. India).
+      if (
+        (res.redirected && !/\/oembed/.test(res.url)) ||
+        /Govt\. of India decided to block/i.test(body)
+      ) {
+        return {
+          status: "unknown",
+          reason: "platform_blocked",
+          confidence: "low",
+          meta: {
+            method: "tiktok_oembed",
+            devNote: `TikTok redirected this server's network to a regional block page (${res.url}).`,
+          },
+        };
+      }
       if (looksLikeChallenge(body, res.status)) {
         return {
           status: "unknown",
@@ -114,10 +129,12 @@ export const tiktokAdapter: PlatformAdapter = {
                 displayName: data.author_name,
                 avatarUrl: data.thumbnail_url,
               });
+            // oEmbed + public page JSON agreeing → two independent signals.
+            const corroborated = Boolean(enriched?.displayName);
             return {
               status: "taken",
-              confidence: "medium",
-              reason: "best_effort",
+              confidence: corroborated ? "high" : "medium",
+              reason: corroborated ? "ok" : "best_effort",
               profileUrl,
               profile,
               meta: {

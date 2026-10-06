@@ -33,7 +33,8 @@ async function checkViaAbout(username: string): Promise<CheckResult | null> {
       status: "unknown",
       meta: {
         method: "user_about",
-        devNote: "Reddit blocked or challenged this request (bot/network policy)",
+        devNote:
+          "Reddit blocks anonymous JSON from datacenter IPs — set REDDIT_CLIENT_ID/REDDIT_CLIENT_SECRET (official API).",
       },
     };
   }
@@ -176,6 +177,69 @@ async function checkViaUsernameAvailable(
   };
 }
 
+let redditToken: { token: string; expiresAt: number } | null = null;
+
+/**
+ * Official Reddit API (app-only OAuth, client_credentials). Works from
+ * datacenter IPs where www.reddit.com JSON is blocked. Needs a free "script"
+ * or "web" app: REDDIT_CLIENT_ID + REDDIT_CLIENT_SECRET.
+ */
+async function checkViaOAuth(username: string, id: string, secret: string): Promise<CheckResult | null> {
+  if (!redditToken || Date.now() > redditToken.expiresAt - 60_000) {
+    const res = await fetchWithRetry("https://www.reddit.com/api/v1/access_token", {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${Buffer.from(`${id}:${secret}`).toString("base64")}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": REDDIT_UA,
+      },
+      body: "grant_type=client_credentials",
+      maxRetries: 1,
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { access_token?: string; expires_in?: number };
+    if (!data.access_token) return null;
+    redditToken = { token: data.access_token, expiresAt: Date.now() + (data.expires_in ?? 3600) * 1000 };
+  }
+  const res = await fetchWithRetry(`https://oauth.reddit.com/user/${encodeURIComponent(username)}/about`, {
+    headers: { Authorization: `Bearer ${redditToken.token}`, "User-Agent": REDDIT_UA, Accept: "application/json" },
+    maxRetries: 1,
+  });
+  if (res.status === 404) {
+    return {
+      status: "available",
+      confidence: "medium",
+      reason: "best_effort",
+      meta: { method: "reddit_oauth", devNote: "No account found — deleted usernames can never be re-registered on Reddit." },
+    };
+  }
+  if (!res.ok) return null;
+  const json = (await res.json()) as { data?: Record<string, unknown> };
+  const d = (json.data ?? {}) as {
+    name?: string;
+    is_suspended?: boolean;
+    icon_img?: string;
+    snoovatar_img?: string;
+    total_karma?: number;
+    subreddit?: { public_description?: string; title?: string };
+  };
+  if (!d.name) return null;
+  const avatar = (d.snoovatar_img || d.icon_img || "").split("?")[0] || undefined;
+  return {
+    status: "taken",
+    confidence: "high",
+    reason: "ok",
+    profileUrl: `https://www.reddit.com/user/${encodeURIComponent(username)}`,
+    profile: buildProfile({
+      displayName: d.subreddit?.title || d.name,
+      avatarUrl: avatar,
+      bio: sanitizeBio(d.subreddit?.public_description),
+      extra: typeof d.total_karma === "number" ? { karma: d.total_karma } : undefined,
+    }),
+    meta: { method: "reddit_oauth", suspended: Boolean(d.is_suspended) },
+  };
+}
+
 export const redditAdapter: PlatformAdapter = {
   id: "reddit",
   name: "Reddit",
@@ -194,6 +258,12 @@ export const redditAdapter: PlatformAdapter = {
     }
 
     try {
+      const id = process.env.REDDIT_CLIENT_ID?.trim();
+      const secret = process.env.REDDIT_CLIENT_SECRET?.trim();
+      if (id && secret) {
+        const official = await checkViaOAuth(username, id, secret).catch(() => null);
+        if (official) return official;
+      }
       const about = await checkViaAbout(username);
       if (about) {
         if (about.status === "taken" || about.status === "available") {

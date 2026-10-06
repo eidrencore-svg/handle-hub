@@ -23,6 +23,7 @@ const ALLOWED_HOST_SUFFIXES = [
   "redditstatic.com",
   "redditmedia.com",
   "snooguts.net",
+  "xboxlive.com",
 ];
 
 function hostAllowed(hostname: string): boolean {

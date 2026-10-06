@@ -1,5 +1,5 @@
 import type { PlatformAdapter, CheckResult } from "./types";
-import { fetchWithRetry, isAbortError, looksLikeChallenge } from "./http";
+import { BROWSER_UA, fetchWithRetry, isAbortError, looksLikeChallenge } from "./http";
 import { buildProfile, sanitizeBio } from "./profile";
 
 const HANDLE_RE = /^[A-Za-z0-9._]{1,30}$/;
@@ -7,6 +7,7 @@ const HANDLE_RE = /^[A-Za-z0-9._]{1,30}$/;
 const IG_UA =
   "Instagram 192.168.1.2.75 Android (33/13; 420dpi; 1080x2400; Google/google; Pixel 7; panther; panther; en_US; 458229237)";
 const IG_APP_ID = "567067343352427";
+const IG_WEB_APP_ID = "936619743392459";
 
 export const instagramAdapter: PlatformAdapter = {
   id: "instagram",
@@ -27,16 +28,34 @@ export const instagramAdapter: PlatformAdapter = {
     }
 
     try {
-      const res = await fetchWithRetry(
-        `https://i.instagram.com/api/v1/users/web_profile_info/?username=${encodeURIComponent(username)}`,
+      // 1) Public web endpoint with the web app id + referer (rule from Maigret);
+      // 2) mobile host as fallback. Both return 401 "require_login" from many
+      //    datacenter IPs — that is reported as unknown, never as available.
+      let res = await fetchWithRetry(
+        `https://www.instagram.com/api/v1/users/web_profile_info/?username=${encodeURIComponent(username)}`,
         {
           headers: {
-            "User-Agent": IG_UA,
-            "X-IG-App-ID": process.env.INSTAGRAM_APP_ID?.trim() || IG_APP_ID,
+            "User-Agent": BROWSER_UA,
+            "X-IG-App-ID": IG_WEB_APP_ID,
+            Referer: "https://www.instagram.com/",
             Accept: "*/*",
           },
+          maxRetries: 0,
         }
       );
+      if (res.status === 401 || res.status === 429 || res.status === 403) {
+        res = await fetchWithRetry(
+          `https://i.instagram.com/api/v1/users/web_profile_info/?username=${encodeURIComponent(username)}`,
+          {
+            headers: {
+              "User-Agent": IG_UA,
+              "X-IG-App-ID": process.env.INSTAGRAM_APP_ID?.trim() || IG_APP_ID,
+              Accept: "*/*",
+            },
+            maxRetries: 0,
+          }
+        );
+      }
 
       const body = await res.text();
       if (looksLikeChallenge(body, res.status)) {
@@ -136,7 +155,8 @@ export const instagramAdapter: PlatformAdapter = {
           confidence: "low",
           meta: {
             method: "web_profile_info",
-            devNote: "Instagram rate-limited or required login",
+            devNote:
+              "Instagram requires login for anonymous lookups from this network (datacenter IP). Run checks from a residential network you control, or use the official Instagram Graph API (business accounts only).",
           },
         };
       }

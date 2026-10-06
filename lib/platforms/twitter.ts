@@ -161,6 +161,52 @@ async function checkViaSyndication(username: string): Promise<CheckResult | null
   return null;
 }
 
+/**
+ * X's own signup availability endpoint (used by the public signup form; listed
+ * in WhatsMyName). Authoritative for taken/available; reserved/suspended names
+ * come back as other reasons.
+ */
+async function checkViaAvailability(username: string): Promise<CheckResult | null> {
+  const res = await fetchWithRetry(
+    `https://api.x.com/i/users/username_available.json?username=${encodeURIComponent(username)}`,
+    { headers: { "User-Agent": BROWSER_UA, Accept: "application/json" }, maxRetries: 1 }
+  );
+  if (!res.ok) return null;
+  let data: { valid?: boolean; reason?: string; desc?: string };
+  try {
+    data = (await res.json()) as typeof data;
+  } catch {
+    return null;
+  }
+  if (data.reason === "available" && data.valid === true) {
+    return {
+      status: "available",
+      confidence: "high",
+      reason: "ok",
+      meta: { method: "x_username_available" },
+    };
+  }
+  if (data.reason === "taken") {
+    return {
+      status: "taken",
+      confidence: "high",
+      reason: "ok",
+      profileUrl: `https://x.com/${encodeURIComponent(username)}`,
+      meta: { method: "x_username_available" },
+    };
+  }
+  if (data.reason) {
+    // e.g. reserved / banned word / invalid characters: not claimable.
+    return {
+      status: "invalid",
+      confidence: "high",
+      reason: "invalid_format",
+      meta: { method: "x_username_available", devNote: data.desc || data.reason },
+    };
+  }
+  return null;
+}
+
 async function checkViaPublicProfile(username: string): Promise<CheckResult> {
   const res = await fetchWithRetry(
     `https://x.com/${encodeURIComponent(username)}`,
@@ -284,9 +330,20 @@ export const twitterAdapter: PlatformAdapter = {
         process.env.TWITTER_BEARER_TOKEN?.trim();
       if (bearer) return await checkViaApi(username, bearer);
 
-      const synd = await checkViaSyndication(username);
-      if (synd) return synd;
-      return await checkViaPublicProfile(username);
+      const avail = await checkViaAvailability(username).catch(() => null);
+      if (avail?.status === "available" || avail?.status === "invalid") return avail;
+
+      // Taken (or availability endpoint down): enrich from public syndication / page.
+      const synd = await checkViaSyndication(username).catch(() => null);
+      const page = synd ?? (await checkViaPublicProfile(username));
+      if (avail?.status === "taken") {
+        return {
+          ...avail,
+          profile: page.status === "taken" ? page.profile : undefined,
+          meta: { ...avail.meta, profileSource: page.meta?.method },
+        };
+      }
+      return page;
     } catch (err) {
       return {
         status: "unknown",

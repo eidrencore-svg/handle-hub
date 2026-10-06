@@ -1,5 +1,6 @@
 import type { PlatformAdapter, CheckResult } from "./types";
-import { fetchWithTimeout, isAbortError } from "./http";
+import { BROWSER_UA, fetchWithRetry, fetchWithTimeout, isAbortError, looksLikeChallenge } from "./http";
+import { buildProfile, parseCount } from "./profile";
 
 // Modern gamertag display names are typically 1–15 chars (letters/numbers/spaces).
 const GAMERTAG_RE = /^[a-zA-Z0-9 ]{1,15}$/;
@@ -140,6 +141,62 @@ async function checkViaOpenXbl(
   };
 }
 
+/**
+ * Keyless fallback: xboxgamertag.com, a public Xbox Live gamertag lookup
+ * (detection rule from WhatsMyName "Xbox Gamertag"; Sherlock/Maigret list it too).
+ * 200 + "Games Played" → taken, 404 + "Gamertag doesn't exist" → available,
+ * anything else (503 upstream errors, bot walls) → unknown.
+ */
+async function checkViaGamertagLookup(gamertag: string): Promise<CheckResult> {
+  const res = await fetchWithRetry(
+    `https://www.xboxgamertag.com/search/${encodeURIComponent(gamertag)}`,
+    {
+      headers: { "User-Agent": BROWSER_UA, Accept: "text/html", "Accept-Language": "en-US,en;q=0.9" },
+      maxRetries: 1,
+    }
+  );
+  const body = await res.text();
+  const base = { meta: { method: "xboxgamertag_lookup" } };
+  if (res.status === 200 && body.includes("Games Played") && !looksLikeChallenge(body, res.status)) {
+    const pic = body.match(/url=(https:\/\/images-eds-ssl\.xboxlive\.com\/image\?url=[^"&\s]+)/)?.[1];
+    const score = body.match(/Gamerscore<\/span>\s*([\d,]+)/)?.[1];
+    const games = body.match(/Games Played<\/span>\s*([\d,]+)/)?.[1];
+    const name = body.match(/<h1[^>]*>\s*<a[^>]*>([^<]+)<\/a>/)?.[1];
+    return {
+      status: "taken",
+      confidence: "medium",
+      reason: "best_effort",
+      profileUrl: `https://www.xbox.com/play/user/${encodeURIComponent(gamertag)}`,
+      profile: buildProfile({
+        displayName: name?.trim(),
+        avatarUrl: pic,
+        extra: {
+          ...(score ? { gamerscore: parseCount(score) ?? 0 } : {}),
+          ...(games ? { gamesPlayed: parseCount(games) ?? 0 } : {}),
+        },
+      }),
+      ...base,
+    };
+  }
+  if (res.status === 404 && body.includes("Gamertag doesn't exist")) {
+    return {
+      status: "available",
+      confidence: "medium",
+      reason: "best_effort",
+      meta: {
+        method: "xboxgamertag_lookup",
+        devNote: "No Xbox Live profile found via public lookup — Xbox may still reserve some names.",
+      },
+    };
+  }
+  return {
+    status: "unknown",
+    reason: res.status === 429 ? "rate_limited" : "unexpected_response",
+    confidence: "low",
+    meta: { method: "xboxgamertag_lookup", devNote: `Lookup returned HTTP ${res.status}` },
+  };
+}
+
 export const xboxAdapter: PlatformAdapter = {
   id: "xbox",
   name: "Xbox",
@@ -167,16 +224,7 @@ export const xboxAdapter: PlatformAdapter = {
         return await checkViaOpenXbl(gamertag, openXblKey);
       }
 
-      return {
-        status: "unknown",
-        reason: "needs_credentials",
-        confidence: "low",
-        meta: {
-          method: "none",
-          devNote:
-            "Set XBOX_AUTHORIZATION + XBOX_RESERVATION_ID for true availability, or OPENXBL_API_KEY for profile search.",
-        },
-      };
+      return await checkViaGamertagLookup(gamertag);
     } catch (err) {
       return {
         status: "unknown",
