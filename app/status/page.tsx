@@ -12,7 +12,7 @@ function pct(n: number | null | undefined) {
 
 export default async function StatusPage() {
   const rows = await getPlatformHealth();
-  const stats = catalogStats();
+  const stats = await catalogStats();
   const core = rows.filter((r) => r.source === "adapter");
   const catalog = rows.filter((r) => r.source !== "adapter" && !r.nsfw);
   const enabled = catalog.filter((r) => r.enabled).length;

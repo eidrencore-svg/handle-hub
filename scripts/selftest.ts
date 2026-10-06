@@ -10,7 +10,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { buildCatalog } from "./build-catalog";
+import { buildCatalog } from "../lib/engine/build";
 import { probeSite } from "../lib/engine/detect";
 import { createPool, hostOf } from "../lib/engine/pool";
 import { randomHandle } from "../lib/engine/random";
