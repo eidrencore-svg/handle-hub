@@ -22,9 +22,14 @@ export interface CheckResult {
   meta?: Record<string, unknown>;
 }
 
+/** pass 1 = normal method order; pass 2 = automatic retry that leads with a different method. */
+export interface CheckContext {
+  pass?: 1 | 2;
+}
+
 export interface PlatformAdapter {
   id: string;
   name: string;
   kind: PlatformKind;
-  checkUsername(username: string): Promise<CheckResult>;
+  checkUsername(username: string, ctx?: CheckContext): Promise<CheckResult>;
 }

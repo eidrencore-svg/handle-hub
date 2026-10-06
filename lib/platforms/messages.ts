@@ -7,6 +7,7 @@ export type CheckReason =
   | "rate_limited"
   | "needs_credentials"
   | "platform_blocked"
+  | "region_blocked"
   | "auth_failed"
   | "network_error"
   | "timeout"
@@ -17,13 +18,14 @@ const USER_MESSAGES: Record<CheckReason, string> = {
   ok: "",
   best_effort:
     "Based on a public profile lookup — confirm on the platform before claiming.",
-  rate_limited: "Couldn't verify right now — try again shortly.",
-  needs_credentials: "This platform doesn't allow automatic checks yet.",
-  platform_blocked: "Check blocked by the platform.",
-  auth_failed: "Couldn't verify right now — try again shortly.",
-  network_error: "Couldn't reach this platform — try again shortly.",
-  timeout: "Couldn't verify right now — try again shortly.",
-  unexpected_response: "Couldn't verify right now — try again shortly.",
+  rate_limited: "The platform is limiting automated checks from this network right now.",
+  needs_credentials: "This platform needs API keys for automatic checks.",
+  platform_blocked: "The platform blocked the automated check from this network.",
+  region_blocked: "This platform is blocked in your region, so it can't be checked from this network.",
+  auth_failed: "The platform rejected the automated check.",
+  network_error: "Couldn't reach the platform from this network.",
+  timeout: "The platform didn't answer in time.",
+  unexpected_response: "The platform's answer wasn't clear enough to call.",
   invalid_format: "This username isn't valid on this platform.",
 };
 
@@ -130,7 +132,10 @@ export function presentResult(result: CheckResult): PresentedResult {
   }
   delete meta.note;
 
-  const userMessage = userMessageFor(result.status, reason);
+  // Adapters/validators can attach a specific explanation (e.g. "Xbox gamertags can't contain “_”").
+  // It stays in meta so cached rows replay the same message.
+  const userMessage =
+    typeof meta.userMessage === "string" && meta.userMessage ? meta.userMessage : userMessageFor(result.status, reason);
 
   return {
     ...result,

@@ -1,7 +1,19 @@
 export const DEFAULT_TIMEOUT_MS = 8_000;
+/** Instagram/TikTok/Reddit pages are heavy and mobile networks are slow: give them longer. */
+export const SLOW_TIMEOUT_MS = 12_000;
 
 export const BROWSER_UA =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36";
+
+/** Headers a normal desktop browser sends for a top-level page load. */
+export function browserHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  return {
+    "User-Agent": BROWSER_UA,
+    Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    ...extra,
+  };
+}
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));

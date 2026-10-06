@@ -1,13 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
-import { adapters, checkPlatformsSelective, presentResult } from "@/lib/platforms";
+import { adapters, checkPlatformsSelective, manualCheckUrl, presentResult } from "@/lib/platforms";
 import type { ProfileInfo } from "@/lib/platforms/profile";
 import { ensureUsername, getLatestChecks, logSearch, persistChecks } from "@/lib/supabase/repo";
 import { CACHE_TTL_MS } from "@/lib/supabase/server";
 import { allowRequest, clientIp } from "@/lib/rateLimit";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
-/** Core 10 hand-tuned platforms (fast path). Catalog sites stream from /api/scan. */
+/**
+ * Core 10 hand-tuned platforms (fast path). Catalog sites stream from /api/scan.
+ *   ?username=…                 required
+ *   &platforms=instagram,reddit  optional subset (used by the per-card Retry button)
+ *   &fresh=1                     skip the cache
+ */
 export async function GET(request: NextRequest) {
   const started = Date.now();
   const ip = clientIp(request.headers);
@@ -23,11 +29,15 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Invalid username format" }, { status: 400 });
   }
 
-  const coreIds = adapters.map((a) => a.id);
-  const [usernameId, cached] = await Promise.all([
+  const requested = request.nextUrl.searchParams.get("platforms")?.split(",").map((s) => s.trim()).filter(Boolean);
+  const coreIds = adapters.map((a) => a.id).filter((id) => !requested?.length || requested.includes(id));
+  const fresh_ = request.nextUrl.searchParams.get("fresh") === "1";
+  const [usernameId, cachedAll] = await Promise.all([
     ensureUsername(username),
-    getLatestChecks(username, CACHE_TTL_MS, { platformIds: coreIds, withProfiles: true }),
+    fresh_ ? Promise.resolve(new Map()) : getLatestChecks(username, CACHE_TTL_MS, { platformIds: coreIds, withProfiles: true }),
   ]);
+  // Never serve a cached "unknown": always try again.
+  const cached = new Map([...cachedAll].filter(([, row]) => row.status !== "unknown"));
   const missingIds = coreIds.filter((id) => !cached.has(id));
   const fresh = missingIds.length > 0 ? await checkPlatformsSelective(username, missingIds) : [];
 
@@ -64,13 +74,14 @@ export async function GET(request: NextRequest) {
       platformId: pid,
       platformName: adapter?.name ?? pid,
       kind: adapter?.kind ?? "social",
+      checkUrl: manualCheckUrl(pid, username),
       ...presented,
       cached: true,
     });
   }
   for (const r of fresh) byId.set(r.platformId, { ...r, cached: false });
 
-  const results = adapters.map(
+  const results = adapters.filter((a) => coreIds.includes(a.id)).map(
     (a) =>
       byId.get(a.id) ?? {
         platformId: a.id,
@@ -80,7 +91,8 @@ export async function GET(request: NextRequest) {
         reason: "unexpected_response",
         confidence: "low",
         estimate: false,
-        userMessage: "Couldn't verify right now — try again shortly.",
+        userMessage: "The platform's answer wasn't clear enough to call.",
+        checkUrl: manualCheckUrl(a.id, username),
         meta: {},
       }
   );
@@ -94,7 +106,7 @@ export async function GET(request: NextRequest) {
     cachedPlatforms: cached.size,
     freshPlatforms: fresh.length,
   };
-  void logSearch({
+  if (!requested?.length) void logSearch({
     handle: username,
     usernameId,
     summary,
