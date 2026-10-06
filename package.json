@@ -4,10 +4,14 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "prebuild": "tsx scripts/build-catalog.ts --if-missing",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test:adapters": "tsx scripts/test-adapters.ts"
+    "catalog": "tsx scripts/build-catalog.ts",
+    "selftest": "tsx scripts/selftest.ts",
+    "test:adapters": "tsx scripts/test-adapters.ts",
+    "test:scan": "tsx scripts/test-scan.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.8",

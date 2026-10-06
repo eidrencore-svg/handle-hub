@@ -5,3 +5,10 @@ out
 !.env.example
 .DS_Store
 *.log
+
+# generated catalog data (WhatsMyName CC BY-SA 4.0 / Sherlock MIT / Maigret MIT) — built by `npm run catalog`
+/data/upstream/
+/data/sites/*.generated.json
+tsconfig.tsbuildinfo
+next-env.d.ts
+package-lock.json
