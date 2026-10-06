@@ -55,11 +55,14 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 | Xbox | `xboxgamertag.com/search/{u}` markers (`Games Played` / `Gamertag doesn't exist`) | WhatsMyName / Sherlock / Maigret "Xbox Gamertag" |
 | Instagram | `www.instagram.com/api/v1/users/web_profile_info` with web app id + referer | Maigret "Instagram" |
 | TikTok | regional block page detection (`Govt. of India decided to block`) | Sherlock "TikTok" |
+| TikTok (fallback) | `countik.com/api/exist/{u}` public lookup (`status: success` + `uniqueId` → taken; 404 `User Not Found` → available) | countik.com (third-party TikTok analytics site; used only when tiktok.com doesn't answer, e.g. it's blocked in India) |
 | Discord | `unique-username/username-attempt-unauthed` (`{"taken":…}`) | Sherlock / WMN / Maigret |
 
 Not adopted (by policy): rules that need a shared/guest bearer token or
 session cookies (e.g. Maigret's Twitter guest-token flow), third-party
-scrapers of other platforms (imginn, nitter mirrors, twitchtracker) and
+scrapers of other platforms (imginn, nitter mirrors, twitchtracker; the one
+exception is the countik.com TikTok fallback above, for regions where
+tiktok.com is blocked) and
 archive.org "was archived" checks (they say nothing about current availability).
 
 Other projects reviewed: [Blackbird](https://github.com/p1ngul1n0/blackbird)
