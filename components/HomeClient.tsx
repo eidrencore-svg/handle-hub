@@ -27,6 +27,7 @@ export default function HomeClient() {
   const [recentSearches, setRecentSearches] = useState<
     Array<{ username: string; createdAt: string }>
   >([]);
+  const [retrying, setRetrying] = useState<Set<string>>(new Set());
   const autoRan = useRef(false);
 
   useEffect(() => {
@@ -106,6 +107,34 @@ export default function HomeClient() {
       }
     },
     [router]
+  );
+
+  /** Re-check one platform, bypassing the cache (per-card Retry button). */
+  const retryPlatform = useCallback(
+    async (platformId: string) => {
+      const handle = checkedUsername;
+      if (!handle) return;
+      setRetrying((prev) => new Set(prev).add(platformId));
+      try {
+        const res = await fetch(
+          `/api/check?username=${encodeURIComponent(handle)}&platforms=${platformId}&fresh=1`
+        );
+        const data = await res.json();
+        const next = Array.isArray(data.results) ? (data.results as CheckResult[]).find((r) => r.platformId === platformId) : undefined;
+        if (res.ok && next) {
+          setResults((prev) => prev?.map((r) => (r.platformId === platformId ? next : r)) ?? prev);
+        }
+      } catch {
+        /* keep the previous result */
+      } finally {
+        setRetrying((prev) => {
+          const n = new Set(prev);
+          n.delete(platformId);
+          return n;
+        });
+      }
+    },
+    [checkedUsername]
   );
 
   useEffect(() => {
@@ -297,20 +326,20 @@ export default function HomeClient() {
                     </span>
                     <span className="mx-1.5 text-slate-600">·</span>
                     <span className="font-medium text-slate-300">
-                      {summary.unknown} unknown
+                      {summary.unknown} not verified
                     </span>
                     {summary.invalid > 0 ? (
                       <>
                         <span className="mx-1.5 text-slate-600">·</span>
                         <span className="font-medium text-amber-300">
-                          {summary.invalid} invalid
+                          {summary.invalid} not allowed
                         </span>
                       </>
                     ) : null}
                   </p>
                 ) : (
                   <p className="mt-2 text-sm text-slate-400">
-                    Querying platforms…
+                    Querying platforms… unclear answers are retried automatically.
                   </p>
                 )}
               </div>
@@ -357,7 +386,12 @@ export default function HomeClient() {
                     </h2>
                     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                       {gaming.map((r) => (
-                        <PlatformCard key={r.platformId} result={r} />
+                        <PlatformCard
+                          key={r.platformId}
+                          result={r}
+                          retrying={retrying.has(r.platformId)}
+                          onRetry={r.status === "unknown" ? () => void retryPlatform(r.platformId) : undefined}
+                        />
                       ))}
                     </div>
                   </div>
@@ -370,7 +404,12 @@ export default function HomeClient() {
                     </h2>
                     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                       {social.map((r) => (
-                        <PlatformCard key={r.platformId} result={r} />
+                        <PlatformCard
+                          key={r.platformId}
+                          result={r}
+                          retrying={retrying.has(r.platformId)}
+                          onRetry={r.status === "unknown" ? () => void retryPlatform(r.platformId) : undefined}
+                        />
                       ))}
                     </div>
                   </div>
