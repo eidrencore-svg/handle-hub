@@ -1,4 +1,4 @@
-import { probeSite } from "./detect";
+import { fill, probeSite } from "./detect";
 import { createPool, hostOf } from "./pool";
 import { signupUrlFor } from "./signup";
 import type { ProbeResult, SiteDef } from "./types";
@@ -18,7 +18,8 @@ export function toItem(def: SiteDef, r: ProbeResult, cached = false): ScanItem {
     category: def.category,
     urlMain: def.urlMain,
     claimUrl: r.status === "available" ? signupUrlFor(def.urlMain || def.urlTemplate) ?? def.urlMain : undefined,
-    profileUrl: r.status === "taken" ? r.profileUrl : undefined,
+    // taken → the profile; unknown → the page the user can open to check by hand.
+    profileUrl: r.status === "taken" || r.status === "unknown" ? r.profileUrl : undefined,
     cached,
   };
 }
@@ -37,6 +38,8 @@ export async function* scanSites(
   let wake: (() => void) | null = null;
   let pending = sites.length;
   const settled = new Set<string>();
+  const unchecked = (def: SiteDef): ScanItem =>
+    toItem(def, { site: def.site, defId: def.id, status: "unknown", latencyMs: 0, reason: "deadline", profileUrl: fill(def.urlTemplate, username) });
 
   const push = (item: ScanItem) => {
     if (settled.has(item.site)) return;
@@ -49,7 +52,7 @@ export async function* scanSites(
   for (const def of sites) {
     void schedule(hostOf(def.probeUrl), async () => {
       if (opts.signal?.aborted || Date.now() > opts.deadline - 500) {
-        return push(toItem(def, { site: def.site, defId: def.id, status: "unknown", latencyMs: 0, reason: "deadline" }));
+        return push(unchecked(def));
       }
       const remaining = Math.max(1_500, Math.min(opts.timeoutMs ?? 8_000, opts.deadline - Date.now()));
       const r = await probeSite(def, username, { timeoutMs: remaining, retries: 1, deadline: opts.deadline });
@@ -60,7 +63,7 @@ export async function* scanSites(
   const deadlineTimer = setTimeout(() => {
     for (const def of sites) {
       if (!settled.has(def.site)) {
-        push(toItem(def, { site: def.site, defId: def.id, status: "unknown", latencyMs: 0, reason: "deadline" }));
+        push(unchecked(def));
       }
     }
   }, Math.max(0, opts.deadline - Date.now()));

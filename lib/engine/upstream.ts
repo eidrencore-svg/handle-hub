@@ -26,3 +26,13 @@ export function rawUrl(key: UpstreamKey): string {
   const u = UPSTREAM[key];
   return `https://raw.githubusercontent.com/${u.repo}/${u.sha}/${u.path}`;
 }
+
+/** Same pinned commit via the jsDelivr GitHub mirror (some networks block raw.githubusercontent.com). */
+export function mirrorUrl(key: UpstreamKey): string {
+  const u = UPSTREAM[key];
+  return `https://cdn.jsdelivr.net/gh/${u.repo}@${u.sha}/${u.path}`;
+}
+
+export function upstreamUrls(key: UpstreamKey): string[] {
+  return [rawUrl(key), mirrorUrl(key)];
+}
