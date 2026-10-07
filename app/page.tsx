@@ -1,5 +1,8 @@
 import { Suspense } from "react";
 import HomeClient from "@/components/HomeClient";
+import { SiteHeader } from "@/components/SiteHeader";
+
+export const dynamic = "force-dynamic";
 
 function HomeFallback() {
   return (
@@ -15,7 +18,7 @@ function HomeFallback() {
 export default function HomePage() {
   return (
     <Suspense fallback={<HomeFallback />}>
-      <HomeClient />
+      <HomeClient header={<SiteHeader />} />
     </Suspense>
   );
 }
