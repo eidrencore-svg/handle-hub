@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { statusBadgeClasses } from "@/components/statusStyles";
+import { statusBadgeClasses, statusLabel } from "@/components/statusStyles";
 import { SiteInitialTile } from "@/components/PlatformIcon";
 
 type ScanItem = {
@@ -27,8 +27,8 @@ const CATEGORIES = [
   { id: "community", label: "Community" },
   { id: "other", label: "Other" },
 ] as const;
-const STATUSES = ["all", "taken", "available", "unknown"] as const;
-const ORDER: Record<string, number> = { taken: 0, available: 1, unknown: 2, invalid: 3 };
+const STATUSES = ["all", "available", "taken", "unknown", "invalid"] as const;
+const ORDER: Record<string, number> = { available: 0, taken: 1, unknown: 2, invalid: 3 };
 const PAGE = 120;
 /** No event (results or the 15s heartbeat) for this long → treat the stream as stalled. */
 const STALL_MS = 35_000;
@@ -187,8 +187,17 @@ export function AllSites({ username }: { username: string }) {
             </p>
           </div>
           <p className="text-sm text-slate-300" aria-live="polite">
-            <span className="font-semibold text-white">{checked.toLocaleString()}</span>
-            <span className="text-slate-500"> / {total ? total.toLocaleString() : "…"} sites checked</span>
+            {phase === "done" ? (
+              <>
+                <span className="font-semibold text-white">{checked.toLocaleString()}</span>
+                <span className="text-slate-500"> sites checked</span>
+              </>
+            ) : (
+              <span className="text-slate-400">
+                Checking <span className="font-semibold text-white">{checked.toLocaleString()}</span> of{" "}
+                {total ? total.toLocaleString() : "…"} sites…
+              </span>
+            )}
             {phase === "done" && durationMs != null ? (
               <span className="text-slate-500"> · {(durationMs / 1000).toFixed(1)}s</span>
             ) : null}
@@ -204,10 +213,10 @@ export function AllSites({ username }: { username: string }) {
         </div>
 
         <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs">
-          <span className="font-medium text-rose-300">{counts.taken} taken</span>
           <span className="font-medium text-emerald-300">{counts.available} available</span>
-          <span className="font-medium text-slate-300">{counts.unknown} unclear</span>
-          {counts.invalid ? <span className="font-medium text-amber-300">{counts.invalid} not allowed</span> : null}
+          <span className="font-medium text-rose-300">{counts.taken} taken</span>
+          <span className="font-medium text-amber-300">{counts.unknown} couldn&apos;t verify</span>
+          {counts.invalid ? <span className="font-medium text-orange-300">{counts.invalid} invalid</span> : null}
         </div>
 
         {notice && phase === "preparing" ? (
@@ -215,7 +224,10 @@ export function AllSites({ username }: { username: string }) {
         ) : null}
         {error ? (
           <div role="alert" className="mt-3 flex flex-col gap-2 rounded-xl border border-amber-300/20 bg-amber-400/[0.06] px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-xs leading-relaxed text-amber-100">{error}</p>
+            <p className="text-xs leading-relaxed text-amber-100">
+              We couldn&apos;t finish the scan.{" "}
+              <span className="text-amber-100/60">{error}</span>
+            </p>
             <button
               type="button"
               onClick={() => setAttempt((a) => a + 1)}
@@ -227,7 +239,7 @@ export function AllSites({ username }: { username: string }) {
         ) : null}
 
         <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="Categories">
+          <div className="-mx-4 flex gap-1.5 overflow-x-auto px-4 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:px-0" role="tablist" aria-label="Categories">
             {CATEGORIES.map((c) => {
               const active = category === c.id;
               return (
@@ -239,7 +251,7 @@ export function AllSites({ username }: { username: string }) {
                     setCategory(c.id);
                     setLimit(PAGE);
                   }}
-                  className={`rounded-full px-3 py-1.5 text-xs font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+                  className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
                     active ? "bg-accent text-white shadow-glow" : "border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"
                   }`}
                 >
@@ -254,11 +266,11 @@ export function AllSites({ username }: { username: string }) {
               value={status}
               onChange={(e) => setStatus(e.target.value as (typeof STATUSES)[number])}
               aria-label="Filter by status"
-              className="h-9 rounded-xl border border-white/10 bg-ink-800/80 px-3 text-xs font-medium capitalize text-slate-200 outline-none focus:ring-2 focus:ring-accent/40"
+              className="h-9 rounded-xl border border-white/10 bg-ink-800/80 px-3 text-xs font-medium text-slate-200 outline-none focus:ring-2 focus:ring-accent/40"
             >
               {STATUSES.map((s) => (
                 <option key={s} value={s}>
-                  {s === "all" ? "Any status" : s}
+                  {s === "all" ? "Any status" : statusLabel(s)}
                 </option>
               ))}
             </select>
@@ -267,54 +279,54 @@ export function AllSites({ username }: { username: string }) {
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Filter sites…"
               aria-label="Filter sites by name"
-              className="h-9 w-44 rounded-xl border border-white/10 bg-ink-800/80 px-3 text-xs text-white outline-none placeholder:text-slate-500 focus:ring-2 focus:ring-accent/40"
+              className="h-9 min-w-0 flex-1 rounded-xl sm:w-44 sm:flex-none border border-white/10 bg-ink-800/80 px-3 text-xs text-white outline-none placeholder:text-slate-500 focus:ring-2 focus:ring-accent/40"
             />
           </div>
         </div>
       </div>
 
-      <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {visible.slice(0, limit).map((i) => (
-          <div
-            key={i.site}
-            className="flex items-center justify-between gap-2 rounded-xl border border-white/5 bg-ink-800/60 px-3 py-2.5 transition hover:border-accent/30"
-            title={i.reason ? `${i.name}: ${i.reason}` : i.name}
-          >
-            <div className="flex min-w-0 items-center gap-2.5">
-              <SiteInitialTile name={i.name} />
-              <div className="min-w-0">
-              <p className="truncate text-sm font-medium text-slate-100">{i.name}</p>
-              <p className="truncate text-[11px] text-slate-500">
-                {hostLabel(i.urlMain)}
-                {i.cached ? " · cached" : ""}
-              </p>
+      <div className="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-3 xl:grid-cols-4">
+        {visible.slice(0, limit).map((i) => {
+          const href =
+            i.status === "available" ? i.claimUrl : i.status === "taken" ? i.profileUrl : undefined;
+          return (
+            <div
+              key={i.site}
+              className={`flex min-w-0 flex-col gap-2 rounded-xl border bg-ink-800/60 p-3 transition ${
+                i.status === "available" ? "border-emerald-400/15 hover:border-emerald-400/35" : "border-white/5 hover:border-white/15"
+              }`}
+              title={i.reason ? `${i.name}: ${i.reason}` : i.name}
+            >
+              <div className="flex min-w-0 items-center gap-2.5">
+                <SiteInitialTile name={i.name} />
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-slate-100">{i.name}</p>
+                  <p className="truncate text-[11px] text-slate-500">{hostLabel(i.urlMain)}</p>
+                </div>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className={`truncate rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusBadgeClasses(i.status)}`}>
+                  {statusLabel(i.status)}
+                </span>
+                {href ? (
+                  <a
+                    href={href}
+                    target="_blank"
+                    rel="noreferrer nofollow"
+                    className={`shrink-0 text-[11px] font-semibold hover:underline ${
+                      i.status === "available" ? "text-emerald-300" : "text-accent-soft"
+                    }`}
+                  >
+                    {i.status === "available" ? "Claim" : "Open"}
+                  </a>
+                ) : null}
               </div>
             </div>
-            <div className="flex shrink-0 items-center gap-2">
-              {i.status === "taken" && i.profileUrl ? (
-                <a href={i.profileUrl} target="_blank" rel="noreferrer nofollow" className="text-[11px] font-medium text-accent-soft hover:underline">
-                  Profile
-                </a>
-              ) : null}
-              {i.status === "unknown" && i.profileUrl ? (
-                <a href={i.profileUrl} target="_blank" rel="noreferrer nofollow" className="text-[11px] text-slate-400 hover:text-white hover:underline" title="Open the page to check by hand">
-                  Open
-                </a>
-              ) : null}
-              {i.status === "available" && i.claimUrl ? (
-                <a href={i.claimUrl} target="_blank" rel="noreferrer nofollow" className="text-[11px] text-emerald-300/70 hover:text-emerald-200 hover:underline">
-                  Claim
-                </a>
-              ) : null}
-              <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize ${statusBadgeClasses(i.status)}`}>
-                {i.status === "invalid" ? "n/a" : i.status === "unknown" ? "unclear" : i.status}
-              </span>
-            </div>
-          </div>
-        ))}
+          );
+        })}
         {(phase === "connecting" || phase === "preparing" || phase === "scanning") && visible.length < 8
           ? Array.from({ length: 8 - visible.length }).map((_, k) => (
-              <div key={`sk-${k}`} className="h-[54px] animate-pulse rounded-xl border border-white/5 bg-ink-800/40" />
+              <div key={`sk-${k}`} className="h-[84px] animate-pulse rounded-xl border border-white/5 bg-ink-800/40" />
             ))
           : null}
       </div>
