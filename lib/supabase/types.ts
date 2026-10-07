@@ -16,6 +16,72 @@ export type Database = {
   }
   public: {
     Tables: {
+      accounts: {
+        Row: {
+          created_at: string
+          email: string | null
+          id: string
+          plan: string
+          plan_renews_at: string | null
+          stripe_customer_id: string | null
+          stripe_subscription_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          email?: string | null
+          id: string
+          plan?: string
+          plan_renews_at?: string | null
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          email?: string | null
+          id?: string
+          plan?: string
+          plan_renews_at?: string | null
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      api_keys: {
+        Row: {
+          created_at: string
+          id: string
+          key_hash: string
+          last_used_at: string | null
+          name: string
+          prefix: string
+          revoked_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          key_hash: string
+          last_used_at?: string | null
+          name?: string
+          prefix: string
+          revoked_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          key_hash?: string
+          last_used_at?: string | null
+          name?: string
+          prefix?: string
+          revoked_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       checks: {
         Row: {
           checked_at: string
@@ -227,6 +293,33 @@ export type Database = {
           },
         ]
       }
+      search_history: {
+        Row: {
+          created_at: string
+          handle: string
+          id: number
+          source: string
+          summary: Json
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          handle: string
+          id?: never
+          source: string
+          summary?: Json
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          handle?: string
+          id?: never
+          source?: string
+          summary?: Json
+          user_id?: string
+        }
+        Relationships: []
+      }
       searches: {
         Row: {
           created_at: string
@@ -326,6 +419,30 @@ export type Database = {
           },
         ]
       }
+      usage_counters: {
+        Row: {
+          count: number
+          day: string
+          metric: string
+          subject: string
+          updated_at: string
+        }
+        Insert: {
+          count?: number
+          day?: string
+          metric: string
+          subject: string
+          updated_at?: string
+        }
+        Update: {
+          count?: number
+          day?: string
+          metric?: string
+          subject?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       usernames: {
         Row: {
           first_seen: string
@@ -344,6 +461,42 @@ export type Database = {
           handle?: string
           id?: string
           last_checked?: string | null
+        }
+        Relationships: []
+      }
+      watchlist: {
+        Row: {
+          created_at: string
+          freed_at: string | null
+          handle: string
+          id: string
+          last_checked_at: string | null
+          last_status: string | null
+          notified_at: string | null
+          platform_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          freed_at?: string | null
+          handle: string
+          id?: string
+          last_checked_at?: string | null
+          last_status?: string | null
+          notified_at?: string | null
+          platform_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          freed_at?: string | null
+          handle?: string
+          id?: string
+          last_checked_at?: string | null
+          last_status?: string | null
+          notified_at?: string | null
+          platform_id?: string
+          user_id?: string
         }
         Relationships: []
       }
@@ -410,7 +563,18 @@ export type Database = {
       }
     }
     Functions: {
-      [_ in never]: never
+      consume_usage: {
+        Args: {
+          p_amount?: number
+          p_limit: number
+          p_metric: string
+          p_subject: string
+        }
+        Returns: {
+          allowed: boolean
+          used: number
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never
