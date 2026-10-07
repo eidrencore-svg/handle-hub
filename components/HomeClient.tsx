@@ -7,10 +7,22 @@ import {
   SkeletonCard,
   type CheckResult,
 } from "@/components/PlatformCard";
-import { FILTERS, type FilterKey } from "@/components/statusStyles";
+import { FILTERS, statusDotClass, type FilterKey } from "@/components/statusStyles";
 import { AllSites } from "@/components/AllSites";
 
 const SKELETON_COUNT = 10;
+const STATUS_ORDER: Record<string, number> = { available: 0, taken: 1, unknown: 2, invalid: 3 };
+const byStatus = (a: CheckResult, b: CheckResult) =>
+  (STATUS_ORDER[a.status] ?? 2) - (STATUS_ORDER[b.status] ?? 2);
+
+const FEATURES: { title: string; body: string }[] = [
+  { title: "Core first", body: "Steam, Xbox, PlayStation, Twitch, X, Instagram, TikTok, Discord, Reddit and YouTube, each with its real platform rules." },
+  { title: "Then the long tail", body: "1,500+ self-tested sites in one streaming scan." },
+  { title: "Honest results", body: "When a wall or rate limit hits we say Couldn't verify. Never a fake Available." },
+  { title: "Act from the card", body: "Claim it if it's free, open the profile if it's taken, or retry when it's unclear." },
+  { title: "Live scan", body: "Results stream in as they land, with Available sorted to the top." },
+  { title: "Stay consistent", body: "See where one handle works across platforms before you commit to it." },
+];
 
 export default function HomeClient() {
   const router = useRouter();
@@ -72,8 +84,8 @@ export default function HomeClient() {
     return results.filter((r) => r.status === filter);
   }, [results, filter]);
 
-  const gaming = filtered.filter((r) => r.kind === "gaming");
-  const social = filtered.filter((r) => r.kind === "social");
+  const gaming = filtered.filter((r) => r.kind === "gaming").sort(byStatus);
+  const social = filtered.filter((r) => r.kind === "social").sort(byStatus);
 
   const runCheck = useCallback(
     async (raw: string, syncUrl: boolean) => {
@@ -175,7 +187,7 @@ export default function HomeClient() {
   }
 
   return (
-    <div className="relative min-h-screen overflow-hidden">
+    <div className="relative min-h-screen overflow-x-clip">
       <div className="pointer-events-none absolute inset-0 bg-hero-radial" />
       <div className="pointer-events-none absolute -left-24 top-40 h-72 w-72 rounded-full bg-accent/20 blur-3xl" />
       <div className="pointer-events-none absolute -right-16 top-24 h-80 w-80 rounded-full bg-accent-glow/15 blur-3xl" />
@@ -189,33 +201,34 @@ export default function HomeClient() {
             Handle Hub
           </span>
         </div>
-        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-400">
-          Beta
-        </span>
+        <div className="flex items-center gap-2">
+          <a href="/status" className="rounded-full px-3 py-1 text-xs text-slate-400 transition hover:text-white">
+            Status
+          </a>
+          <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-400">
+            Beta
+          </span>
+        </div>
       </header>
 
       <main className="relative z-10 mx-auto max-w-6xl px-4 pb-20 pt-8 sm:px-6 sm:pt-14">
         <section className="mx-auto max-w-3xl text-center">
-          <p className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-slate-300">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-            Multi-platform username intelligence
-          </p>
           <h1 className="text-balance text-4xl font-semibold tracking-tight text-white sm:text-5xl md:text-6xl">
-            Find your next{" "}
+            One handle.{" "}
             <span className="bg-gradient-to-r from-accent-soft via-white to-accent-glow bg-clip-text text-transparent">
-              handle
-            </span>{" "}
-            everywhere
+              Everywhere that matters.
+            </span>
           </h1>
-          <p className="mx-auto mt-5 max-w-2xl text-balance text-base leading-relaxed text-slate-400 sm:text-lg">
-            Search once across gaming and social platforms. Instant availability
-            signals for Steam, Xbox, PlayStation, Twitch, Discord, X, Instagram,
-            TikTok, Reddit, YouTube — plus 1,500+ self-tested sites.
+          <p className="mx-auto mt-4 max-w-xl text-balance text-base leading-relaxed text-slate-400 sm:text-lg">
+            <span className="sm:hidden">Available, Taken, or Unknown — no guessing.</span>
+            <span className="hidden sm:inline">
+              Check availability across gaming and social — Available, Taken, or Unknown. No guessing.
+            </span>
           </p>
 
           <form
             onSubmit={onSubmit}
-            className="mx-auto mt-10 flex max-w-2xl flex-col gap-3 sm:flex-row sm:items-stretch"
+            className="sticky top-0 z-30 -mx-4 mt-8 flex max-w-2xl gap-2 bg-ink-950/85 px-4 py-3 backdrop-blur sm:static sm:mx-auto sm:mt-10 sm:gap-3 sm:bg-transparent sm:px-0 sm:py-0 sm:backdrop-blur-none"
             role="search"
             aria-label="Username availability search"
           >
@@ -233,26 +246,23 @@ export default function HomeClient() {
                 id="username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="Enter a username"
+                placeholder="Type a handle to see where it's free"
                 autoComplete="off"
                 spellCheck={false}
-                className="h-14 w-full rounded-2xl border border-white/10 bg-ink-800/80 pl-10 pr-4 text-base text-white shadow-card outline-none ring-0 placeholder:text-slate-500 transition focus:border-accent/60 focus:ring-2 focus:ring-accent/40"
+                className="h-12 w-full rounded-2xl sm:h-14 border border-white/10 bg-ink-800/80 pl-10 pr-4 text-base text-white shadow-card outline-none ring-0 placeholder:text-slate-500 transition focus:border-accent/60 focus:ring-2 focus:ring-accent/40"
               />
             </div>
             <button
               type="submit"
               disabled={loading || !username.trim()}
-              className="inline-flex h-14 items-center justify-center rounded-2xl bg-gradient-to-r from-accent to-accent-glow px-8 text-sm font-semibold text-white shadow-glow transition hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex h-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-r from-accent to-accent-glow px-5 sm:h-14 sm:px-8 text-sm font-semibold text-white shadow-glow transition hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {loading ? "Checking…" : "Check"}
             </button>
           </form>
 
-          <p className="mt-3 text-xs text-slate-500">
-            Press Enter to search. Shareable links use ?username=
-          </p>
           {recentSearches.length > 0 ? (
-            <div className="mx-auto mt-6 max-w-2xl">
+            <div className="mx-auto mt-4 max-w-2xl">
               <p className="mb-2 text-left text-xs font-medium uppercase tracking-wider text-slate-500">
                 Recently checked
               </p>
@@ -292,8 +302,8 @@ export default function HomeClient() {
         ) : null}
 
         {(loading || results) && (
-          <section className="mt-12 space-y-8">
-            <div className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-ink-900/70 p-4 shadow-card backdrop-blur sm:flex-row sm:items-center sm:justify-between">
+          <section className="mt-10 space-y-6 sm:mt-12 sm:space-y-8">
+            <div className="rounded-2xl border border-white/10 bg-ink-900/70 p-4 shadow-card backdrop-blur">
               <div>
                 <p className="text-sm text-slate-400">Results for</p>
                 <div className="mt-1 flex flex-wrap items-center gap-2">
@@ -315,61 +325,44 @@ export default function HomeClient() {
                     {copied === "link" ? "Link copied" : "Copy link"}
                   </button>
                 </div>
-                {!loading && results ? (
-                  <p className="mt-2 text-sm text-slate-400">
-                    <span className="font-medium text-rose-300">
-                      {summary.taken} taken
-                    </span>
-                    <span className="mx-1.5 text-slate-600">·</span>
-                    <span className="font-medium text-emerald-300">
-                      {summary.available} available
-                    </span>
-                    <span className="mx-1.5 text-slate-600">·</span>
-                    <span className="font-medium text-slate-300">
-                      {summary.unknown} not verified
-                    </span>
-                    {summary.invalid > 0 ? (
-                      <>
-                        <span className="mx-1.5 text-slate-600">·</span>
-                        <span className="font-medium text-amber-300">
-                          {summary.invalid} not allowed
-                        </span>
-                      </>
-                    ) : null}
-                  </p>
-                ) : (
+                {loading ? (
                   <p className="mt-2 text-sm text-slate-400">
                     Querying platforms… unclear answers are retried automatically.
                   </p>
-                )}
+                ) : null}
               </div>
+            </div>
 
+            {!loading && results ? (
               <div
-                className="flex flex-wrap gap-2"
+                className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:px-0"
                 role="group"
                 aria-label="Filter results by status"
               >
                 {FILTERS.map((f) => {
                   const active = filter === f.id;
+                  const count = f.id === "all" ? results.length : summary[f.id];
+                  if (f.id === "invalid" && count === 0) return null;
                   return (
                     <button
                       key={f.id}
                       type="button"
                       onClick={() => setFilter(f.id)}
-                      disabled={loading}
-                      className={`rounded-full px-3 py-1.5 text-xs font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+                      aria-pressed={active}
+                      className={`inline-flex shrink-0 items-center gap-2 rounded-full px-3.5 py-2 text-xs font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
                         active
                           ? "bg-accent text-white shadow-glow"
                           : "border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"
-                      } disabled:opacity-50`}
-                      aria-pressed={active}
+                      }`}
                     >
+                      {f.id !== "all" ? <span className={`h-1.5 w-1.5 rounded-full ${statusDotClass(f.id)}`} /> : null}
                       {f.label}
+                      <span className={`tabular-nums ${active ? "text-white/80" : "text-slate-500"}`}>{count}</span>
                     </button>
                   );
                 })}
               </div>
-            </div>
+            ) : null}
 
             {loading ? (
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -424,6 +417,19 @@ export default function HomeClient() {
             )}
           </section>
         )}
+
+        {!checkedUsername && !loading ? (
+          <section aria-label="What Handle Hub does" className="mx-auto mt-24 max-w-5xl">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {FEATURES.map((f) => (
+                <div key={f.title} className="rounded-2xl border border-white/10 bg-ink-800/50 p-5">
+                  <h2 className="text-sm font-semibold text-white">{f.title}</h2>
+                  <p className="mt-1.5 text-sm leading-relaxed text-slate-400">{f.body}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
         {checkedUsername && !error ? <AllSites key={checkedUsername} username={checkedUsername} /> : null}
       </main>
