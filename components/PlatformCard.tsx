@@ -256,7 +256,7 @@ export function PlatformCard({
             ) : null}
             {result.checkUrl ? (
               <a href={result.checkUrl} target="_blank" rel="noreferrer nofollow" className={secondaryBtn}>
-                Check on site
+                Check on {result.platformName}
                 <ExternalIcon />
               </a>
             ) : null}
