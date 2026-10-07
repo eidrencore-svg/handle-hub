@@ -26,3 +26,16 @@ export function clientIp(headers: Headers): string {
     "unknown"
   );
 }
+
+/** Fixed-window limiter that also reports what's left (for X-RateLimit headers). */
+export function takeToken(key: string, limit: number, windowMs = 60_000): { allowed: boolean; remaining: number; resetAt: number } {
+  const now = Date.now();
+  let cur = buckets.get(key);
+  if (!cur || now >= cur.resetAt) {
+    cur = { count: 0, resetAt: now + windowMs };
+    buckets.set(key, cur);
+  }
+  if (cur.count >= limit) return { allowed: false, remaining: 0, resetAt: cur.resetAt };
+  cur.count += 1;
+  return { allowed: true, remaining: Math.max(0, limit - cur.count), resetAt: cur.resetAt };
+}
