@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { PlatformIcon, PlatformTile } from "@/components/PlatformIcon";
-import { kindLabel, statusBadgeClasses } from "@/components/statusStyles";
+import { CLAIM_URLS, kindLabel, statusBadgeClasses, statusLabel } from "@/components/statusStyles";
 import { formatCount, type ProfileInfo } from "@/lib/platforms/profile";
 
 export type CheckResult = {
@@ -22,25 +22,6 @@ export type CheckResult = {
   profile?: ProfileInfo;
   meta?: Record<string, unknown>;
 };
-
-function confidenceLabel(c?: string, estimate?: boolean): string | null {
-  if (c === "high") return "High confidence";
-  if (c === "medium") return "Medium";
-  if (c === "low" && (estimate || true)) return estimate ? "Low / Estimate" : "Low";
-  if (estimate) return "Estimate";
-  return null;
-}
-
-function confidenceClasses(c?: string): string {
-  switch (c) {
-    case "high":
-      return "bg-emerald-500/10 text-emerald-300/90 ring-emerald-500/20";
-    case "medium":
-      return "bg-sky-500/10 text-sky-300/90 ring-sky-500/20";
-    default:
-      return "bg-white/5 text-slate-400 ring-white/10";
-  }
-}
 
 function avatarSrc(url?: string): string | undefined {
   if (!url) return undefined;
@@ -156,7 +137,33 @@ function RetryIcon({ spinning }: { spinning?: boolean }) {
   );
 }
 
-const DISCORD_HINT = "Discord has no public profile pages. To confirm, open Discord → Settings → My Account → Username.";
+const DISCORD_HINT = "Discord has no public profile pages. Confirm in Discord under Settings, My Account, Username.";
+
+function quietConfidence(c?: string, estimate?: boolean): string | null {
+  if (c === "high") return "High confidence";
+  if (c === "medium") return "Medium confidence";
+  if (c === "low") return estimate ? "Low confidence, estimate" : "Low confidence";
+  if (estimate) return "Estimate";
+  return null;
+}
+
+function defaultReason(status: string, platformName: string): string {
+  switch (status) {
+    case "available":
+      return `Looks free on ${platformName}.`;
+    case "taken":
+      return `Someone already uses this on ${platformName}.`;
+    case "invalid":
+      return `${platformName} doesn't allow this format.`;
+    default:
+      return `${platformName} didn't give a clear answer. Retry, or check on ${platformName}.`;
+  }
+}
+
+const primaryBtn =
+  "inline-flex w-full items-center justify-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:w-auto sm:py-2";
+const secondaryBtn =
+  "inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold text-slate-200 ring-1 ring-white/10 transition hover:bg-white/5 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60 sm:flex-none";
 
 export function PlatformCard({
   result,
@@ -167,114 +174,95 @@ export function PlatformCard({
   onRetry?: () => void;
   retrying?: boolean;
 }) {
-  const message = result.userMessage;
-  const conf = confidenceLabel(result.confidence, result.estimate);
-  const showProfile = result.status === "taken" && result.profile;
-  const isUnknown = result.status === "unknown";
+  const { status } = result;
+  const isUnknown = status !== "available" && status !== "taken" && status !== "invalid";
+  const conf = status === "available" || status === "taken" ? quietConfidence(result.confidence, result.estimate) : null;
+  const showProfile = status === "taken" && result.profile;
+  const claimUrl = status === "available" ? CLAIM_URLS[result.platformId] : undefined;
+  const reason =
+    result.userMessage ||
+    (isUnknown && result.platformId === "discord" ? DISCORD_HINT : defaultReason(status, result.platformName));
 
   return (
     <article
-      className={`group relative flex flex-col rounded-2xl border p-4 shadow-card backdrop-blur transition ${
-        isUnknown
-          ? "border-sky-300/15 bg-ink-800/70 hover:border-sky-300/30"
-          : "border-white/10 bg-ink-800/70 hover:border-accent/40 hover:bg-ink-700/80"
+      className={`flex flex-col rounded-2xl border bg-ink-800/70 p-4 shadow-card backdrop-blur transition hover:bg-ink-700/80 ${
+        status === "available"
+          ? "border-emerald-400/20 hover:border-emerald-400/40"
+          : isUnknown
+            ? "border-amber-300/15 hover:border-amber-300/30"
+            : "border-white/10 hover:border-white/20"
       }`}
     >
       <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-start gap-3">
+        <div className="flex min-w-0 items-center gap-3">
           <PlatformTile platformId={result.platformId} title={result.platformName} />
           <div className="min-w-0">
-            <h3 className="truncate text-base font-semibold text-white">
-              {result.platformName}
-            </h3>
-            <p className="mt-0.5 text-xs uppercase tracking-wide text-slate-400">
-              {kindLabel(result.kind)}
-              {result.cached ? " · cached" : ""}
-            </p>
+            <h3 className="truncate text-base font-semibold text-white">{result.platformName}</h3>
+            <p className="text-[11px] uppercase tracking-wide text-slate-500">{kindLabel(result.kind)}</p>
           </div>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
-          <span
-            className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${
-              isUnknown ? "bg-sky-400/10 text-sky-200 ring-1 ring-sky-300/25" : statusBadgeClasses(result.status)
-            }`}
-          >
-            {isUnknown ? "Not verified" : result.status === "invalid" ? "Not allowed" : result.status}
+          <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${statusBadgeClasses(status)}`}>
+            {statusLabel(status)}
           </span>
-          {conf && !isUnknown && result.status !== "invalid" ? (
-            <span
-              className={`rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ring-1 ${confidenceClasses(result.confidence)}`}
-            >
-              {conf}
-            </span>
-          ) : null}
+          {conf ? <span className="text-[10px] text-slate-500">{conf}{result.cached ? " · cached" : ""}</span> : null}
         </div>
       </div>
 
+      <p
+        className={`mt-3 text-xs leading-relaxed ${
+          status === "invalid" ? "text-orange-200/90" : isUnknown ? "text-amber-100/80" : "line-clamp-2 text-slate-400"
+        }`}
+      >
+        {reason}
+      </p>
+
       {showProfile ? (
-        <ProfileBlock
-          profile={result.profile!}
-          platformId={result.platformId}
-          platformName={result.platformName}
-        />
+        <ProfileBlock profile={result.profile!} platformId={result.platformId} platformName={result.platformName} />
       ) : null}
 
-      {isUnknown ? (
-        <div className="mt-3 rounded-xl border border-sky-300/10 bg-sky-400/[0.04] p-3">
-          <p className="text-xs leading-relaxed text-slate-300">
-            {message || "We couldn't get a clear answer automatically."}{" "}
-            <span className="text-slate-400">
-              {result.checkUrl ? "Confirm it yourself in one tap:" : result.platformId === "discord" ? DISCORD_HINT : ""}
-            </span>
-          </p>
-          <div className="mt-2.5 flex flex-wrap gap-2">
-            {result.checkUrl ? (
-              <a
-                href={result.checkUrl}
-                target="_blank"
-                rel="noreferrer nofollow"
-                className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white ring-1 ring-white/15 transition hover:bg-white/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-              >
-                Check on {result.platformName}
-                <ExternalIcon />
-              </a>
-            ) : null}
+      <div className="mt-auto pt-4">
+        {status === "available" ? (
+          claimUrl ? (
+            <a
+              href={claimUrl}
+              target="_blank"
+              rel="noreferrer nofollow"
+              className={`${primaryBtn} bg-emerald-500/90 text-ink-950 hover:bg-emerald-400`}
+            >
+              Claim on {result.platformName}
+              <ExternalIcon />
+            </a>
+          ) : null
+        ) : status === "taken" ? (
+          result.profileUrl ? (
+            <a
+              href={result.profileUrl}
+              target="_blank"
+              rel="noreferrer"
+              className={`${primaryBtn} bg-white/10 text-white ring-1 ring-white/15 hover:bg-white/15`}
+            >
+              Open profile
+              <ExternalIcon />
+            </a>
+          ) : null
+        ) : isUnknown ? (
+          <div className="flex flex-wrap gap-2">
             {onRetry ? (
-              <button
-                type="button"
-                onClick={onRetry}
-                disabled={retrying}
-                className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-300 ring-1 ring-white/10 transition hover:bg-white/5 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60"
-              >
+              <button type="button" onClick={onRetry} disabled={retrying} className={secondaryBtn}>
                 <RetryIcon spinning={retrying} />
                 {retrying ? "Retrying…" : "Retry"}
               </button>
             ) : null}
-          </div>
-        </div>
-      ) : (
-        <>
-          <div className="mt-4 flex min-h-[1.25rem] items-center justify-between gap-2">
-            {result.status === "taken" && result.profileUrl ? (
-              <a
-                href={result.profileUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="text-sm font-medium text-accent-soft underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-              >
-                View profile
+            {result.checkUrl ? (
+              <a href={result.checkUrl} target="_blank" rel="noreferrer nofollow" className={secondaryBtn}>
+                Check on site
+                <ExternalIcon />
               </a>
-            ) : (
-              <span className="text-sm text-slate-500">—</span>
-            )}
+            ) : null}
           </div>
-          {message ? (
-            <p className={`mt-3 text-xs leading-relaxed ${result.status === "invalid" ? "text-amber-200/90" : "line-clamp-2 text-slate-400"}`}>
-              {message}
-            </p>
-          ) : null}
-        </>
-      )}
+        ) : null}
+      </div>
     </article>
   );
 }

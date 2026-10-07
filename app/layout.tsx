@@ -9,9 +9,9 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Handle Hub — Username availability across platforms",
+  title: "Handle Hub: check a username everywhere that matters",
   description:
-    "Check a handle once across gaming platforms and social networks. Instant availability for Steam, Xbox, PSN, Twitch, Discord, X, Instagram, TikTok, Reddit, YouTube, and more.",
+    "Check one handle across Steam, Xbox, PlayStation, Twitch, Instagram, TikTok and 1,500+ more sites. Honest results, no guessing.",
 };
 
 export default function RootLayout({
