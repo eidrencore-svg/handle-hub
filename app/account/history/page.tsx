@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { PageShell } from "@/components/PageShell";
+import { AccountLayout } from "@/components/account/AccountLayout";
+import { getAccountPlan } from "@/lib/usage";
 import { ui } from "@/components/ui/styles";
 import { createSupabaseServerClient, getCurrentUser } from "@/lib/supabase/ssr";
 import { clearHistory } from "@/lib/historyActions";
@@ -47,13 +48,11 @@ export default async function HistoryPage() {
     ? await supabase.from("search_history").select("id, handle, source, summary, created_at").order("created_at", { ascending: false }).limit(100)
     : { data: [] };
   const rows = data ?? [];
+  const planId = await getAccountPlan(user.id, user.email);
 
   return (
-    <PageShell width="max-w-3xl">
-      <a href="/account" className="text-xs text-slate-400 hover:text-white">
-        ← Account
-      </a>
-      <div className="mt-2 flex items-end justify-between gap-3">
+    <AccountLayout active="history" plan={planId}>
+      <div className="flex items-end justify-between gap-3">
         <div>
           <h1 className={ui.h1}>Search history</h1>
           <p className={ui.sub}>Pick up where you left off.</p>
@@ -98,6 +97,6 @@ export default async function HistoryPage() {
           })}
         </ul>
       )}
-    </PageShell>
+    </AccountLayout>
   );
 }

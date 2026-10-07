@@ -1,13 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-
-const LINKS = [
-  { href: "/account", label: "Account" },
-  { href: "/account/api-keys", label: "API keys" },
-  { href: "/account/history", label: "Search history" },
-  { href: "/tools/watchlist", label: "Watchlist" },
-];
+import { ACCOUNT_SECTIONS } from "@/lib/accountNav";
 
 export function AccountMenu({ email, plan }: { email: string | null; plan?: string }) {
   const ref = useRef<HTMLDetailsElement>(null);
@@ -33,7 +27,7 @@ export function AccountMenu({ email, plan }: { email: string | null; plan?: stri
           {plan ? <p className="mt-0.5 text-xs capitalize text-slate-400">{plan} plan</p> : null}
         </div>
         <nav className="py-1">
-          {LINKS.map((l) => (
+          {ACCOUNT_SECTIONS.map((l) => (
             <a key={l.href} href={l.href} className="block px-4 py-2.5 text-sm text-slate-300 hover:bg-white/5 hover:text-white">
               {l.label}
             </a>

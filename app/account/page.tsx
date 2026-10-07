@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { PageShell } from "@/components/PageShell";
+import { AccountLayout } from "@/components/account/AccountLayout";
 import { UsageMeter } from "@/components/UsageMeter";
 import { ui } from "@/components/ui/styles";
 import { getCurrentUser } from "@/lib/supabase/ssr";
 import { getAccountPlan, getUsageToday } from "@/lib/usage";
 import { PLANS, priceLabel } from "@/lib/plans";
+import { WATCHLIST_LINE } from "@/lib/watchlist/config";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Your account · Handle Hub" };
@@ -19,7 +20,7 @@ export default async function AccountPage() {
   const since = user.createdAt ? new Date(user.createdAt).toLocaleDateString("en", { month: "short", year: "numeric" }) : null;
 
   return (
-    <PageShell width="max-w-3xl" plan={planId}>
+    <AccountLayout active="overview" plan={planId}>
       <h1 className={ui.h1}>Your account</h1>
       <p className={`${ui.sub} break-all`}>
         {user.email}
@@ -51,7 +52,7 @@ export default async function AccountPage() {
         {[
           { href: "/account/api-keys", title: "API keys", body: "Create and revoke keys for the REST API." },
           { href: "/account/history", title: "Search history", body: "Pick up where you left off." },
-          { href: "/tools/watchlist", title: "Watchlist", body: "Get an alert when a handle frees up." },
+          { href: "/tools/watchlist", title: "Watchlist", body: WATCHLIST_LINE },
         ].map((c) => (
           <a key={c.href} href={c.href} className={`${ui.cardMuted} block transition hover:border-accent/40 hover:bg-ink-800/80`}>
             <h3 className="text-sm font-semibold text-white">{c.title}</h3>
@@ -73,6 +74,6 @@ export default async function AccountPage() {
           </form>
         </div>
       </section>
-    </PageShell>
+    </AccountLayout>
   );
 }

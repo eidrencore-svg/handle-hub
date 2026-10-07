@@ -4,6 +4,7 @@ import { useActionState } from "react";
 import {
   sendMagicLink,
   sendPasswordReset,
+  sendSignupLink,
   signInWithPassword,
   signUp,
   updatePassword,
@@ -11,11 +12,12 @@ import {
 } from "@/lib/auth/actions";
 import { ui } from "@/components/ui/styles";
 
-type Mode = "login" | "signup" | "magic" | "forgot" | "reset";
+type Mode = "login" | "signup" | "signup-magic" | "magic" | "forgot" | "reset";
 
 const ACTIONS = {
   login: signInWithPassword,
   signup: signUp,
+  "signup-magic": sendSignupLink,
   magic: sendMagicLink,
   forgot: sendPasswordReset,
   reset: updatePassword,
@@ -24,6 +26,7 @@ const ACTIONS = {
 const SUBMIT: Record<Mode, [string, string]> = {
   login: ["Log in", "Logging in…"],
   signup: ["Create free account", "Creating account…"],
+  "signup-magic": ["Email me a sign-up link", "Sending…"],
   magic: ["Email me a login link", "Sending…"],
   forgot: ["Send reset link", "Sending…"],
   reset: ["Save new password", "Saving…"],
