@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { PageShell } from "@/components/PageShell";
 import { ui } from "@/components/ui/styles";
 import { getViewer } from "@/lib/tools/viewer";
+import { WATCHLIST_LINE } from "@/lib/watchlist/config";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
@@ -16,8 +17,8 @@ const TOOLS: Tool[] = [
   { href: "/tools/bulk", title: "Bulk check", line: "Paste a list and check every name in one go.", tier: "Pro", glyph: "≡" },
   { href: "/tools/variants", title: "Variant compare", line: "See name, name_, name. and name1 side by side.", tier: "Pro", glyph: "⇄" },
   { href: "/tools/suggestions", title: "Suggestions", line: "Taken? Get close alternatives that are actually free.", tier: "Pro", glyph: "✦" },
-  { href: "/tools/watchlist", title: "Watchlist", line: "Get an alert when a handle you want frees up.", tier: "Pro", glyph: "◉" },
-  { href: "/tools/domains", title: "Domain check", line: "See whether .com, .gg and .io match your handle.", tier: "Free", glyph: "◎" },
+  { href: "/tools/watchlist", title: "Watchlist", line: WATCHLIST_LINE, tier: "Pro", glyph: "◉" },
+  { href: "/tools/domains", title: "Domain check", line: "See whether .com, .io, .dev and more match your handle.", tier: "Free", glyph: "◎" },
   { href: "/tools/export", title: "CSV export", line: "Download any scan for your team or your records.", tier: "Pro", glyph: "↧" },
   { href: "/account/history", title: "Search history", line: "Pick up where you left off.", tier: "Free", glyph: "↺" },
   { href: "/docs/api", title: "API", line: "Put Handle Hub's checks inside your own app.", tier: "Pro", glyph: "{ }" },

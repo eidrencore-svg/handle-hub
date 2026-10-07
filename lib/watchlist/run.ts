@@ -62,6 +62,8 @@ export async function runWatchlist(opts: { batch?: number; staleMinutes?: number
 
   // TODO(email): send "it's free" emails for rows with freed_at set and notified_at null,
   // then set notified_at. Needs an email provider (e.g. Resend/Postmark API key) — not wired yet.
+  // When this ships, set RESEND_API_KEY: WATCHLIST_EMAIL_ENABLED (lib/watchlist/config.ts) then
+  // flips every "alerts coming soon" line in the UI.
   const { count } = await sb
     .from("watchlist")
     .select("id", { count: "exact", head: true })

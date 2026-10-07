@@ -101,6 +101,26 @@ export async function sendMagicLink(_prev: AuthState, formData: FormData): Promi
   return { message: `If ${email} has an account, a login link is on its way. Open it on this device.`, email };
 }
 
+/** Passwordless sign-up: emails a link that creates the account and signs in. */
+export async function sendSignupLink(_prev: AuthState, formData: FormData): Promise<AuthState> {
+  const { email, next } = fields(formData);
+  if (!EMAIL_RE.test(email)) return { error: "Enter a valid email.", email };
+  let supabase;
+  try {
+    supabase = await client();
+  } catch (e) {
+    return { error: (e as Error).message, email };
+  }
+  const origin = await siteOrigin();
+  const { error } = await supabase.auth.signInWithOtp({
+    email,
+    options: { emailRedirectTo: `${origin}/auth/callback?next=${encodeURIComponent(next)}`, shouldCreateUser: true },
+  });
+  if (error) return { error: friendly(error.message), email };
+  // Existing accounts simply get a login link, so the message is the same either way.
+  return { message: `Check ${email} for a link to finish creating your account. Open it on this device.`, email };
+}
+
 export async function sendPasswordReset(_prev: AuthState, formData: FormData): Promise<AuthState> {
   const { email } = fields(formData);
   if (!EMAIL_RE.test(email)) return { error: "Enter a valid email.", email };

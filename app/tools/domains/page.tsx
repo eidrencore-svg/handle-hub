@@ -9,7 +9,7 @@ export default async function DomainsPage({ searchParams }: { searchParams: Prom
   const { name } = await searchParams;
   return (
     <PageShell width="max-w-4xl">
-      <ToolHeader title="Domain check" line="See whether .com, .gg and .io match your handle." />
+      <ToolHeader title="Domain check" line="See whether .com, .io, .dev and more match your handle." />
       <DomainsClient initial={name?.slice(0, 63)} />
     </PageShell>
   );

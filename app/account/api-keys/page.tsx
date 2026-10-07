@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { PageShell } from "@/components/PageShell";
+import { AccountLayout } from "@/components/account/AccountLayout";
 import { CreateApiKeyForm } from "@/components/CreateApiKeyForm";
 import { ui } from "@/components/ui/styles";
 import { createSupabaseServerClient, getCurrentUser } from "@/lib/supabase/ssr";
@@ -32,11 +32,8 @@ export default async function ApiKeysPage() {
   const usage = await getUsageToday(`u:${user.id}`);
 
   return (
-    <PageShell width="max-w-3xl" plan={planId}>
-      <a href="/account" className="text-xs text-slate-400 hover:text-white">
-        ← Account
-      </a>
-      <h1 className={`${ui.h1} mt-2`}>API keys</h1>
+    <AccountLayout active="api-keys" plan={planId}>
+      <h1 className={ui.h1}>API keys</h1>
       <p className={ui.sub}>
         Put Handle Hub&apos;s checks inside your own app. Send a key as <code className="text-slate-200">Authorization: Bearer hh_…</code>.{" "}
         <a href="/docs/api" className={ui.link}>
@@ -117,6 +114,6 @@ export default async function ApiKeysPage() {
           </details>
         ) : null}
       </section>
-    </PageShell>
+    </AccountLayout>
   );
 }

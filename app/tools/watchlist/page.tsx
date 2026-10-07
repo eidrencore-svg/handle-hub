@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { PageShell } from "@/components/PageShell";
+import { AccountLayout } from "@/components/account/AccountLayout";
+import { WATCHLIST_LINE, WATCHLIST_NOTE } from "@/lib/watchlist/config";
 import { ToolHeader } from "@/components/tools/ToolHeader";
 import { Gate } from "@/components/tools/Gate";
 import { WatchForm } from "@/components/tools/WatchForm";
@@ -20,6 +22,22 @@ const ago = (iso: string | null) => {
   return m < 60 ? `checked ${m}m ago` : m < 1440 ? `checked ${Math.round(m / 60)}h ago` : `checked ${Math.round(m / 1440)}d ago`;
 };
 
+/** Signed-in users get the account menu; visitors see the plain tool page. */
+function Shell({ signedIn, plan, children }: { signedIn: boolean; plan?: string; children: React.ReactNode }) {
+  if (signedIn) {
+    return (
+      <AccountLayout active="watchlist" plan={plan}>
+        {children}
+      </AccountLayout>
+    );
+  }
+  return (
+    <PageShell width="max-w-3xl" plan={plan}>
+      {children}
+    </PageShell>
+  );
+}
+
 export default async function WatchlistPage() {
   const viewer = await getViewer();
   const supabase = viewer.signedIn ? await createSupabaseServerClient() : null;
@@ -33,13 +51,12 @@ export default async function WatchlistPage() {
   const slots = viewer.limits.watchlistSlots;
 
   return (
-    <PageShell width="max-w-3xl" plan={viewer.plan ?? undefined}>
-      <ToolHeader title="Watchlist" line="Get an alert when a handle you want frees up." pro />
+    <Shell signedIn={viewer.signedIn} plan={viewer.plan ?? undefined}>
+      <ToolHeader title="Watchlist" line={WATCHLIST_LINE} pro back={!viewer.signedIn} />
       <div className="mt-6 space-y-3">
         {!viewer.signedIn ? <Gate kind="login" feature="the watchlist" next="/tools/watchlist" /> : slots === 0 ? <Gate kind="pro" feature="The watchlist" /> : null}
         <p className={ui.noteBox}>
-          We re-check watched handles every few hours and mark them the moment a real check comes back Available. Email alerts are coming
-          soon; for now, freed handles are flagged here.
+          {WATCHLIST_NOTE}
         </p>
       </div>
 
@@ -88,6 +105,6 @@ export default async function WatchlistPage() {
           ))}
         </ul>
       ) : null}
-    </PageShell>
+    </Shell>
   );
 }

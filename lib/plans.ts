@@ -6,6 +6,8 @@
  *   pro: 9,      // ← proposed, not approved
  *   team: 29,    // ← proposed, not approved
  */
+import { WATCHLIST_ALERTS_SUFFIX } from "./watchlist/config";
+
 export const PRICES_USD_MONTHLY: Record<PlanId, number | null> = {
   free: 0,
   pro: null,
@@ -48,31 +50,61 @@ export type Plan = {
   highlight?: boolean;
 };
 
+const FREE_LIMITS: Limits = {
+  coreChecksPerDay: 100,
+  fullScansPerDay: 3,
+  domainChecksPerDay: 30,
+  toolRunsPerDay: 2,
+  bulkMaxHandles: 5,
+  watchlistSlots: 0,
+  csvExport: false,
+  apiPerDay: 25,
+  apiPerMinute: 10,
+  apiKeys: 1,
+};
+
+const PRO_LIMITS: Limits = {
+  coreChecksPerDay: null,
+  fullScansPerDay: null,
+  domainChecksPerDay: null,
+  toolRunsPerDay: null,
+  bulkMaxHandles: 50,
+  watchlistSlots: 25,
+  csvExport: true,
+  apiPerDay: 5_000,
+  apiPerMinute: 60,
+  apiKeys: 5,
+};
+
+const TEAM_LIMITS: Limits = {
+  coreChecksPerDay: null,
+  fullScansPerDay: null,
+  domainChecksPerDay: null,
+  toolRunsPerDay: null,
+  bulkMaxHandles: 200,
+  watchlistSlots: 200,
+  csvExport: true,
+  apiPerDay: 50_000,
+  apiPerMinute: 300,
+  apiKeys: 20,
+};
+
+const n = (v: number | null) => (v === null ? "Unlimited" : v.toLocaleString("en-US"));
+
 export const PLANS: Record<PlanId, Plan> = {
   free: {
     id: "free",
     name: "Free",
-    blurb: "For trying a name. Includes the 10 core platforms, a few full scans a day, and search history.",
+    blurb: `For trying a name. Includes ${n(FREE_LIMITS.coreChecksPerDay)} core checks and ${n(FREE_LIMITS.fullScansPerDay)} full scans a day, plus search history.`,
     features: [
-      "10 core platforms, 100 checks a day",
-      "3 full scans a day (1,500+ sites)",
+      `10 core platforms, ${n(FREE_LIMITS.coreChecksPerDay)} checks a day`,
+      `${n(FREE_LIMITS.fullScansPerDay)} full scans a day (1,500+ sites)`,
       "Domain check",
       "Search history",
-      "Try bulk check, variants and suggestions (2 runs a day)",
-      "API trial: 25 requests a day",
+      `Try bulk check, variants and suggestions (${n(FREE_LIMITS.toolRunsPerDay)} runs a day)`,
+      `API trial: ${n(FREE_LIMITS.apiPerDay)} requests a day`,
     ],
-    limits: {
-      coreChecksPerDay: 100,
-      fullScansPerDay: 3,
-      domainChecksPerDay: 30,
-      toolRunsPerDay: 2,
-      bulkMaxHandles: 5,
-      watchlistSlots: 0,
-      csvExport: false,
-      apiPerDay: 25,
-      apiPerMinute: 10,
-      apiKeys: 1,
-    },
+    limits: FREE_LIMITS,
   },
   pro: {
     id: "pro",
@@ -82,24 +114,13 @@ export const PLANS: Record<PlanId, Plan> = {
       "For creators and brands locking down a handle. Includes unlimited scans, bulk check, variant compare, suggestions, the watchlist, CSV export and API access.",
     features: [
       "Unlimited checks and full scans",
-      "Bulk check up to 50 handles at once",
+      `Bulk check up to ${n(PRO_LIMITS.bulkMaxHandles)} handles at once`,
       "Variant compare and suggestions",
-      "Watchlist: 25 handles",
+      `Watchlist: ${n(PRO_LIMITS.watchlistSlots)} handles${WATCHLIST_ALERTS_SUFFIX}`,
       "CSV export",
-      "API: 5,000 requests a day",
+      `API: ${n(PRO_LIMITS.apiPerDay)} requests a day`,
     ],
-    limits: {
-      coreChecksPerDay: null,
-      fullScansPerDay: null,
-      domainChecksPerDay: null,
-      toolRunsPerDay: null,
-      bulkMaxHandles: 50,
-      watchlistSlots: 25,
-      csvExport: true,
-      apiPerDay: 5_000,
-      apiPerMinute: 60,
-      apiKeys: 5,
-    },
+    limits: PRO_LIMITS,
   },
   team: {
     id: "team",
@@ -108,23 +129,12 @@ export const PLANS: Record<PlanId, Plan> = {
       "For agencies and studios naming at volume. Everything in Pro, plus shared watchlists and higher API limits.",
     features: [
       "Everything in Pro",
-      "Bulk check up to 200 handles at once",
-      "Watchlist: 200 handles",
+      `Bulk check up to ${n(TEAM_LIMITS.bulkMaxHandles)} handles at once`,
+      `Watchlist: ${n(TEAM_LIMITS.watchlistSlots)} handles${WATCHLIST_ALERTS_SUFFIX}`,
       "Shared watchlists (coming soon)",
-      "API: 50,000 requests a day",
+      `API: ${n(TEAM_LIMITS.apiPerDay)} requests a day`,
     ],
-    limits: {
-      coreChecksPerDay: null,
-      fullScansPerDay: null,
-      domainChecksPerDay: null,
-      toolRunsPerDay: null,
-      bulkMaxHandles: 200,
-      watchlistSlots: 200,
-      csvExport: true,
-      apiPerDay: 50_000,
-      apiPerMinute: 300,
-      apiKeys: 20,
-    },
+    limits: TEAM_LIMITS,
   },
 };
 
