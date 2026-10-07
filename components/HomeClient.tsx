@@ -24,7 +24,7 @@ const FEATURES: { title: string; body: string }[] = [
   { title: "Stay consistent", body: "See where one handle works across platforms before you commit to it." },
 ];
 
-export default function HomeClient() {
+export default function HomeClient({ header }: { header?: React.ReactNode }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialFromUrl = searchParams.get("username")?.trim() || "";
@@ -34,6 +34,7 @@ export default function HomeClient() {
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<CheckResult[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [upgradeUrl, setUpgradeUrl] = useState<string | null>(null);
   const [filter, setFilter] = useState<FilterKey>("all");
   const [copied, setCopied] = useState<"user" | "link" | null>(null);
   const [recentSearches, setRecentSearches] = useState<
@@ -94,6 +95,7 @@ export default function HomeClient() {
 
       setLoading(true);
       setError(null);
+      setUpgradeUrl(null);
       setResults(null);
       setFilter("all");
       setCheckedUsername(trimmed);
@@ -110,7 +112,10 @@ export default function HomeClient() {
           `/api/check?username=${encodeURIComponent(trimmed)}`
         );
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Check failed");
+        if (!res.ok) {
+          if (data.code === "limit_reached" && typeof data.upgradeUrl === "string") setUpgradeUrl(data.upgradeUrl);
+          throw new Error(data.error || "Check failed");
+        }
         setResults(data.results);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Something went wrong");
@@ -192,24 +197,7 @@ export default function HomeClient() {
       <div className="pointer-events-none absolute -left-24 top-40 h-72 w-72 rounded-full bg-accent/20 blur-3xl" />
       <div className="pointer-events-none absolute -right-16 top-24 h-80 w-80 rounded-full bg-accent-glow/15 blur-3xl" />
 
-      <header className="relative z-10 mx-auto flex max-w-6xl items-center justify-between px-4 py-6 sm:px-6">
-        <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-accent-glow shadow-glow">
-            <span className="text-sm font-bold text-white">H</span>
-          </div>
-          <span className="text-sm font-semibold tracking-wide text-slate-200">
-            Handle Hub
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          <a href="/status" className="rounded-full px-3 py-1 text-xs text-slate-400 transition hover:text-white">
-            Status
-          </a>
-          <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-400">
-            Beta
-          </span>
-        </div>
-      </header>
+      {header}
 
       <main className="relative z-10 mx-auto max-w-6xl px-4 pb-20 pt-8 sm:px-6 sm:pt-14">
         <section className="mx-auto max-w-3xl text-center">
@@ -295,9 +283,19 @@ export default function HomeClient() {
         {error ? (
           <div
             role="alert"
-            className="mx-auto mt-8 max-w-2xl rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200"
+            className={`mx-auto mt-8 flex max-w-2xl flex-col gap-3 rounded-2xl border px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between ${
+              upgradeUrl ? "border-accent/30 bg-accent/10 text-slate-200" : "border-rose-500/30 bg-rose-500/10 text-rose-200"
+            }`}
           >
-            {error}
+            <span>{error}</span>
+            {upgradeUrl ? (
+              <a
+                href={upgradeUrl}
+                className="shrink-0 rounded-xl bg-gradient-to-r from-accent to-accent-glow px-4 py-2 text-center text-sm font-semibold text-white shadow-glow hover:brightness-110"
+              >
+                {upgradeUrl === "/signup" ? "Create free account" : "See plans"}
+              </a>
+            ) : null}
           </div>
         ) : null}
 
@@ -324,6 +322,18 @@ export default function HomeClient() {
                   >
                     {copied === "link" ? "Link copied" : "Copy link"}
                   </button>
+                  <a
+                    href={`/tools/export?username=${encodeURIComponent(checkedUsername ?? "")}`}
+                    className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-xs font-medium text-slate-300 transition hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  >
+                    Export CSV
+                  </a>
+                  <a
+                    href={`/tools/suggestions`}
+                    className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-xs font-medium text-slate-300 transition hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  >
+                    Find alternatives
+                  </a>
                 </div>
                 {loading ? (
                   <p className="mt-2 text-sm text-slate-400">
