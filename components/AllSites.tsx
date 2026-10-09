@@ -47,6 +47,7 @@ export function AllSites({ username }: { username: string }) {
   const [phase, setPhase] = useState<"connecting" | "preparing" | "scanning" | "done" | "error">("connecting");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [upgradeUrl, setUpgradeUrl] = useState<string | null>(null);
   const [category, setCategory] = useState<(typeof CATEGORIES)[number]["id"]>("all");
   const [status, setStatus] = useState<(typeof STATUSES)[number]>("all");
   const [query, setQuery] = useState("");
@@ -61,6 +62,7 @@ export function AllSites({ username }: { username: string }) {
     setPhase("connecting");
     setError(null);
     setNotice(null);
+    setUpgradeUrl(null);
     setDurationMs(null);
     setLimit(PAGE);
     buffer.current = [];
@@ -113,7 +115,9 @@ export function AllSites({ username }: { username: string }) {
       const data = (e as MessageEvent).data;
       if (typeof data !== "string") return;
       try {
-        fail(JSON.parse(data).message ?? "The scan failed.");
+        const d = JSON.parse(data);
+        if (d.code === "limit_reached" && typeof d.upgradeUrl === "string") setUpgradeUrl(d.upgradeUrl);
+        fail(d.message ?? "The scan failed.");
       } catch {
         fail("The scan failed.");
       }
@@ -222,7 +226,18 @@ export function AllSites({ username }: { username: string }) {
         {notice && phase === "preparing" ? (
           <p className="mt-3 text-xs text-slate-400" role="status">{notice}</p>
         ) : null}
-        {error ? (
+        {error && upgradeUrl ? (
+          <div role="alert" className="mt-3 flex flex-col gap-2 rounded-xl border border-accent/30 bg-accent/10 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs leading-relaxed text-slate-200">{error}</p>
+            <a
+              href={upgradeUrl}
+              className="shrink-0 rounded-lg bg-gradient-to-r from-accent to-accent-glow px-3 py-1.5 text-center text-xs font-semibold text-white shadow-glow hover:brightness-110"
+            >
+              {upgradeUrl === "/signup" ? "Create free account" : "See plans"}
+            </a>
+          </div>
+        ) : null}
+        {error && !upgradeUrl ? (
           <div role="alert" className="mt-3 flex flex-col gap-2 rounded-xl border border-amber-300/20 bg-amber-400/[0.06] px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-xs leading-relaxed text-amber-100">
               We couldn&apos;t finish the scan.{" "}

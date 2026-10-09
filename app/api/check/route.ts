@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { adapters, checkPlatformsSelective, manualCheckUrl, presentResult } from "@/lib/platforms";
-import type { ProfileInfo } from "@/lib/platforms/profile";
-import { ensureUsername, getLatestChecks, logSearch, persistChecks } from "@/lib/supabase/repo";
-import { CACHE_TTL_MS } from "@/lib/supabase/server";
+import { CORE_IDS, HANDLE_RE, runCoreCheck } from "@/lib/check/core";
+import { logSearch } from "@/lib/supabase/repo";
 import { allowRequest, clientIp } from "@/lib/rateLimit";
+import { consumeFor, getActor, limitResponse } from "@/lib/usage";
+import { metricLimit } from "@/lib/plans";
+import { logHistory } from "@/lib/history";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -13,6 +14,8 @@ export const maxDuration = 60;
  *   ?username=…                 required
  *   &platforms=instagram,reddit  optional subset (used by the per-card Retry button)
  *   &fresh=1                     skip the cache
+ * A full check counts against the caller's daily `core_check` quota; per-card
+ * retries (with &platforms=) only hit the per-minute limit.
  */
 export async function GET(request: NextRequest) {
   const started = Date.now();
@@ -25,100 +28,35 @@ export async function GET(request: NextRequest) {
   if (!username) {
     return NextResponse.json({ error: "Query param `username` is required" }, { status: 400 });
   }
-  if (!/^[a-zA-Z0-9._-]{1,32}$/.test(username)) {
+  if (!HANDLE_RE.test(username)) {
     return NextResponse.json({ error: "Invalid username format" }, { status: 400 });
   }
 
   const requested = request.nextUrl.searchParams.get("platforms")?.split(",").map((s) => s.trim()).filter(Boolean);
-  const coreIds = adapters.map((a) => a.id).filter((id) => !requested?.length || requested.includes(id));
-  const fresh_ = request.nextUrl.searchParams.get("fresh") === "1";
-  const [usernameId, cachedAll] = await Promise.all([
-    ensureUsername(username),
-    fresh_ ? Promise.resolve(new Map()) : getLatestChecks(username, CACHE_TTL_MS, { platformIds: coreIds, withProfiles: true }),
-  ]);
-  // Never serve a cached "unknown": always try again.
-  const cached = new Map([...cachedAll].filter(([, row]) => row.status !== "unknown"));
-  const missingIds = coreIds.filter((id) => !cached.has(id));
-  const fresh = missingIds.length > 0 ? await checkPlatformsSelective(username, missingIds) : [];
+  const isRetry = Boolean(requested?.length);
+  const actor = await getActor(request.headers);
+  if (!isRetry) {
+    const usage = await consumeFor(actor, "core_check");
+    if (!usage.allowed) return limitResponse(actor, "core_check", metricLimit(actor.limits, "core_check"));
+  }
 
-  if (fresh.length > 0) {
-    void persistChecks(
+  const { results, summary, usernameId, cache } = await runCoreCheck(username, {
+    platformIds: isRetry ? CORE_IDS.filter((id) => requested!.includes(id)) : undefined,
+    fresh: request.nextUrl.searchParams.get("fresh") === "1",
+  });
+
+  if (!isRetry) {
+    void logSearch({
+      handle: username,
       usernameId,
-      fresh.map((r) => ({
-        platformId: r.platformId,
-        status: r.status,
-        reason: r.reason,
-        confidence: r.confidence,
-        method: typeof r.meta?.method === "string" ? r.meta.method : null,
-        profileUrl: r.profileUrl,
-        estimate: r.estimate,
-        latencyMs: r.latencyMs,
-        meta: { ...(r.meta ?? {}), confidence: r.confidence },
-        profile: r.profile,
-      }))
-    );
+      summary,
+      platformCount: results.length,
+      durationMs: Date.now() - started,
+      ip,
+      source: "check",
+    });
+    if (actor.kind === "user") void logHistory(actor.userId, username, "check", summary);
   }
 
-  const byId = new Map<string, Record<string, unknown>>();
-  for (const [pid, row] of cached) {
-    const presented = presentResult({
-      status: row.status as "available" | "taken" | "unknown" | "invalid",
-      reason: (row.reason ?? undefined) as never,
-      profileUrl: row.profileUrl ?? undefined,
-      profile: row.profile as ProfileInfo | undefined,
-      meta: { ...row.meta, cached: true, checkedAt: row.checkedAt },
-      confidence: (row.confidence as "high" | "medium" | "low" | null) ?? undefined,
-    });
-    const adapter = adapters.find((a) => a.id === pid);
-    byId.set(pid, {
-      platformId: pid,
-      platformName: adapter?.name ?? pid,
-      kind: adapter?.kind ?? "social",
-      checkUrl: manualCheckUrl(pid, username),
-      ...presented,
-      cached: true,
-    });
-  }
-  for (const r of fresh) byId.set(r.platformId, { ...r, cached: false });
-
-  const results = adapters.filter((a) => coreIds.includes(a.id)).map(
-    (a) =>
-      byId.get(a.id) ?? {
-        platformId: a.id,
-        platformName: a.name,
-        kind: a.kind,
-        status: "unknown",
-        reason: "unexpected_response",
-        confidence: "low",
-        estimate: false,
-        userMessage: "The platform's answer wasn't clear enough to call.",
-        checkUrl: manualCheckUrl(a.id, username),
-        meta: {},
-      }
-  );
-
-  const count = (s: string) => results.filter((r) => (r as { status: string }).status === s).length;
-  const summary = {
-    taken: count("taken"),
-    available: count("available"),
-    unknown: count("unknown"),
-    invalid: count("invalid"),
-    cachedPlatforms: cached.size,
-    freshPlatforms: fresh.length,
-  };
-  if (!requested?.length) void logSearch({
-    handle: username,
-    usernameId,
-    summary,
-    platformCount: results.length,
-    durationMs: Date.now() - started,
-    ip,
-    source: "check",
-  });
-
-  return NextResponse.json({
-    username,
-    results,
-    cache: { hit: cached.size, miss: fresh.length, ttlMinutes: CACHE_TTL_MS / 60000 },
-  });
+  return NextResponse.json({ username, results, cache });
 }

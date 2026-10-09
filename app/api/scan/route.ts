@@ -4,6 +4,9 @@ import { scanSites, toItem, type ScanItem } from "@/lib/engine/scan";
 import { allowRequest, clientIp } from "@/lib/rateLimit";
 import { ensureUsername, getLatestChecks, logSearch, persistChecks, type CheckRow } from "@/lib/supabase/repo";
 import { SCAN_CACHE_TTL_MS } from "@/lib/supabase/server";
+import { consumeFor, getActor, limitMessage } from "@/lib/usage";
+import { metricLimit } from "@/lib/plans";
+import { logHistory } from "@/lib/history";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,6 +35,20 @@ export async function GET(request: NextRequest) {
 
   const started = Date.now();
   const encoder = new TextEncoder();
+
+  // Daily full-scan quota. Sent as an SSE error (not an HTTP 429) so EventSource shows the message.
+  const actor = await getActor(request.headers);
+  const usage = await consumeFor(actor, "full_scan");
+  if (!usage.allowed) {
+    const { message, upgradeUrl } = limitMessage(actor, "full_scan", metricLimit(actor.limits, "full_scan"));
+    const body =
+      `: handle-hub scan\n\n` +
+      `event: error\ndata: ${JSON.stringify({ message, retryable: false, code: "limit_reached", upgradeUrl })}\n\n` +
+      `event: done\ndata: ${JSON.stringify({ taken: 0, available: 0, unknown: 0, invalid: 0, total: 0, durationMs: 0, limited: true })}\n\n`;
+    return new Response(body, {
+      headers: { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache, no-transform" },
+    });
+  }
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -144,6 +161,7 @@ export async function GET(request: NextRequest) {
           ip,
           source: "scan",
         });
+        if (actor.kind === "user") void logHistory(actor.userId, username, "scan", { ...counts, total: sites.length });
         finish();
       }
     },

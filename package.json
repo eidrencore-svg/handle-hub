@@ -14,7 +14,8 @@
     "test:scan": "tsx scripts/test-scan.ts"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.49.8",
+    "@supabase/ssr": "^0.12.7",
+    "@supabase/supabase-js": "^2.117.3",
     "next": "^15.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
